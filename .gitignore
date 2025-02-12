@@ -1,0 +1,3 @@
+# Exclude visual studio directory
+/.vs
+/v17
