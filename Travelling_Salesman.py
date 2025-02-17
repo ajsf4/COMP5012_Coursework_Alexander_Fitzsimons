@@ -5,6 +5,7 @@ import sys
 
 import shader as sh
 import controller as ct
+import shapes as sp
 
 pg.init()
 
@@ -18,17 +19,20 @@ screen = pg.display.set_mode((width, height))
 pg.display.set_caption("Travelling Salesman Problem")
 
 # Shader
-print("Creating shader")
 shader = sh.Shader(width, height)
-#shader.scene.add_objects([sh.Point(np.array([0, 0, 0])), sh.Point(np.array([1, 0, 0])), sh.Point([0, 1, 0]), sh.Point([0, 0, 1])])
+
+points = []
+route = []
+
 with open("data//vrp8.txt", "r") as f:
     lines = f.readlines()
     for i, line in enumerate(lines):
         n, x, y, z = line.split()
-        point = np.array([float(x), float(y), float(z)])
-        shader.scene.add_objects([sh.Point(point)])
+        points.append(np.array([float(x), float(y), float(z)]))
+        route.append(int(n)-1)
 
-print("Shader created")
+path = sp.Path(points, route)
+shader.scene.add_objects(path)
 
 camControl = ct.controller()
 

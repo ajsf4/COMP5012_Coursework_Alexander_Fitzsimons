@@ -1,6 +1,6 @@
-from tkinter import Grid
 import numpy as np
 import pygame as pg
+import shapes as sp
 
 pg.init()
 
@@ -17,10 +17,8 @@ class Shader():
         for obj in self.scene.objects:
             if obj.objectType == "point":
                 self.draw_point((255, 255,255), obj, 3)
-            if obj.objectType == "axes":
-                self.draw_axes(obj)
-            if obj.objectType == "floor":
-                self.draw_floor(obj)
+            else:
+                self.draw_shape(obj)
         return self.surface
         
     def draw_point(self, colour, point, point_size):
@@ -45,26 +43,14 @@ class Shader():
         pg.draw.circle(self.surface, colour, (bx, by), point_size)
         return np.array([bx, by])
 
-    def draw_axes(self, axes):
+    def draw_shape(self, shape):
         pixels = []
-        for i, point in enumerate(axes.points):
-            pix = self.draw_point(axes.pointColours[i], point, 2)
+        for i, point in enumerate(shape.points):
+            pix = self.draw_point(shape.pointColours[i], point, 2)
             pixels.append(pix)
-        for i, line in enumerate(axes.lines):
+        for i, line in enumerate(shape.lines):
             if pixels[line[0]] is not None and pixels[line[1]] is not None:
-                pg.draw.aaline(self.surface, axes.lineColours[i], pixels[line[0]], pixels[line[1]])
-
-    def draw_floor(self, floor):
-        pixels = []
-        for point in floor.points:
-            pix = self.draw_point(floor.colour, point, 1)
-            pixels.append(pix)
-        for i, line in enumerate(floor.lines):
-            if pixels[line[0]] is not None and pixels[line[1]] is not None:
-                pg.draw.aaline(self.surface, floor.colour, pixels[line[0]], pixels[line[1]])
-
-    
-        
+                pg.draw.aaline(self.surface, shape.lineColours[i], pixels[line[0]], pixels[line[1]])        
 
 class Camera():
     def __init__(self, position, orientation, r_z, r_x, width, height):
@@ -81,43 +67,12 @@ class Camera():
 
 class Scene():
     def __init__(self):
-        self.objects = np.array([Axes(), FloorPlane()])
+        self.objects = np.array([sp.Axes(), sp.FloorPlane()])
 
     def add_objects(self, obj):
         self.objects = np.append(self.objects, obj)
 
-class Point():
-    def __init__(self, position=np.array([0,0,0])):
-        self.objectType = "point"
-        self.position = position
 
-class Axes():
-    def __init__(self):
-        self.objectType = "axes"
-        self.points = np.array([Point(np.array([0, 0, 0])), Point(np.array([1, 0, 0])), Point(np.array([0, 1, 0])), Point(np.array([0, 0, 1]))])
-        self.pointColours = np.array([(255, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)])
-        self.lines = np.array([[0, 1], [0, 2], [0, 3]])
-        self.lineColours = np.array([(255, 0, 0), (0, 255, 0), (0, 0, 255)])
-
-class FloorPlane():
-    def __init__(self):
-        self.objectType = "floor"
-        self.points = np.array([])
-        self.lines = []
-        self.colour = (80, 80, 80)
-        self.add_points()
-    
-    def add_points(self):
-        grid_size = 20
-        grid_spacing = 10
-        for x in range(-grid_size, grid_size):
-            for y in range(-grid_size, grid_size):
-                self.points = np.append(self.points, Point(np.array([grid_spacing*x, grid_spacing*y, 0])))
-                
-                if y < 2*grid_size - 1:
-                    self.lines.append([x*2*grid_size + y, x*2*grid_size + (y+1)])
-                if x < 2*grid_size - 1:
-                    self.lines.append([x*2*grid_size + y, (x+1)*2*grid_size + y])
 
 
 
