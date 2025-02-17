@@ -44,48 +44,48 @@ while running:
             if event.key == pg.K_LSHIFT:
                 speed = 10
             if event.key == pg.K_e:
-                camControl.translation[2] = 1
-            if event.key == pg.K_q:
-                camControl.translation[2] = -1
-            if event.key == pg.K_a:
-                camControl.translation[0] = -1
-            if event.key == pg.K_d:
-                camControl.translation[0] = 1
-            if event.key == pg.K_w:
                 camControl.translation[1] = 1
-            if event.key == pg.K_s: 
+            if event.key == pg.K_q:
                 camControl.translation[1] = -1
+            if event.key == pg.K_a:
+                camControl.translation[2] = 1
+            if event.key == pg.K_d:
+                camControl.translation[2] = -1
+            if event.key == pg.K_w:
+                camControl.translation[0] = -1
+            if event.key == pg.K_s: 
+                camControl.translation[0] = 1
             if event.key == pg.K_UP:
-                camControl.rotation[1] = 1
-            if event.key == pg.K_DOWN:
-                camControl.rotation[1] = -1
-            if event.key == pg.K_LEFT:
-                camControl.rotation[0] = -1
-            if event.key == pg.K_RIGHT:
                 camControl.rotation[0] = 1
+            if event.key == pg.K_DOWN:
+                camControl.rotation[0] = -1
+            if event.key == pg.K_LEFT:
+                camControl.rotation[2] = -1
+            if event.key == pg.K_RIGHT:
+                camControl.rotation[2] = 1
         if event.type == pg.KEYUP:
             if event.key == pg.K_LSHIFT:
                 speed = 2
             if event.key == pg.K_e:
-                camControl.translation[2] = 0
+                camControl.translation[1] = 0
             if event.key == pg.K_q:
-                camControl.translation[2] = 0
+                camControl.translation[1] = 0
             if event.key == pg.K_a:
-                camControl.translation[0] = 0
+                camControl.translation[2] = 0
             if event.key == pg.K_d:
-                camControl.translation[0] = 0
+                camControl.translation[2] = 0
             if event.key == pg.K_w:
-                camControl.translation[1] = 0
+                camControl.translation[0] = 0
             if event.key == pg.K_s: 
-                camControl.translation[1] = 0
+                camControl.translation[0] = 0
             if event.key == pg.K_UP:
-                camControl.rotation[1] = 0
+                camControl.rotation[0] = 0
             if event.key == pg.K_DOWN:
-                camControl.rotation[1] = 0
+                camControl.rotation[0] = 0
             if event.key == pg.K_LEFT:
-                camControl.rotation[0] = 0
+                camControl.rotation[2] = 0
             if event.key == pg.K_RIGHT:
-                camControl.rotation[0] = 0
+                camControl.rotation[2] = 0
     
     camControl.transform(shader.camera, speed, 0.7, dt)
 
