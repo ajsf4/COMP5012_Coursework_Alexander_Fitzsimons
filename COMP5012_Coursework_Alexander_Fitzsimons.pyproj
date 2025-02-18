@@ -19,6 +19,7 @@
     <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="optimiser.py" />
     <Compile Include="shapes.py" />
     <Compile Include="controller.py" />
     <Compile Include="shader.py" />

@@ -3,9 +3,11 @@ import numpy as np
 import pygame as pg
 import sys
 
+import random
 import shader as sh
 import controller as ct
 import shapes as sp
+import optimiser as op
 
 pg.init()
 
@@ -24,20 +26,23 @@ shader = sh.Shader(width, height)
 points = []
 route = []
 
-with open("data//vrp8.txt", "r") as f:
+with open("data//vrp9.txt", "r") as f:
     lines = f.readlines()
     for i, line in enumerate(lines):
         n, x, y, z = line.split()
         points.append(np.array([float(x), float(y), float(z)]))
         route.append(int(n)-1)
 
+random.shuffle(route)
 path = sp.Path(points, route)
 shader.scene.add_objects(path)
+
+optimiser = op.SwapperOptimiser(points, route)
 
 camControl = ct.controller()
 
 running = True
-speed = 2
+speed = 8
 dt = 0
 while running:
 
@@ -46,7 +51,7 @@ while running:
             running = False
         if event.type == pg.KEYDOWN:
             if event.key == pg.K_LSHIFT:
-                speed = 10
+                speed = 20
             if event.key == pg.K_e:
                 camControl.translation[1] = 1
             if event.key == pg.K_q:
@@ -69,7 +74,7 @@ while running:
                 camControl.rotation[2] = 1
         if event.type == pg.KEYUP:
             if event.key == pg.K_LSHIFT:
-                speed = 2
+                speed = 8
             if event.key == pg.K_e:
                 camControl.translation[1] = 0
             if event.key == pg.K_q:
@@ -92,6 +97,9 @@ while running:
                 camControl.rotation[2] = 0
     
     camControl.transform(shader.camera, speed, 0.7, dt)
+    optimiser.optimise()
+    path = sp.Path(points, optimiser.best_route)
+    shader.scene.edit_objects(path, -1)
 
     screen.blit(shader.rasterize(), (0, 0))
     pg.display.flip()

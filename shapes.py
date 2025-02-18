@@ -50,7 +50,6 @@ class Path():
         self.defaultColour = (255, 255, 255)
         
         for i, p in enumerate(points):
-            print(i, p)
             self.points.append(Point(np.array(p)))
             self.pointColours.append(self.defaultColour)
             if i < len(route)-1:

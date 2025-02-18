@@ -72,6 +72,9 @@ class Scene():
     def add_objects(self, obj):
         self.objects = np.append(self.objects, obj)
 
+    def edit_objects(self, obj, index):
+        self.objects[index] = obj
+
 
 
 
