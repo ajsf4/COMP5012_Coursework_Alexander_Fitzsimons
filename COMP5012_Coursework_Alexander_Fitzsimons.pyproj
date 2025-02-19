@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{4a093539-04fd-4cd9-84aa-bb7732d29b4c}</ProjectGuid>
     <ProjectHome />
-    <StartupFile>Travelling_Salesman.py</StartupFile>
+    <StartupFile>optimiser.py</StartupFile>
     <SearchPath />
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
@@ -28,6 +28,7 @@
   <ItemGroup>
     <Content Include="data\vrp10.txt" />
     <Content Include="data\vrp8.txt" />
+    <Content Include="data\vrp_test.txt" />
     <Content Include="data\vrp9.txt" />
   </ItemGroup>
   <ItemGroup>
