@@ -9,7 +9,7 @@ class Shader():
         self.width = width
         self.height = height
         self.surface = pg.Surface((width, height))
-        self.camera = Camera(np.array([35, -60, 16], dtype=np.float64), np.array([1.5, 0, 0.05], dtype=np.float64), 0.5, 2, self.width, self.height)
+        self.camera = Camera(np.array([45, 40, 100], dtype=np.float64), np.array([0.125, 0, 1.56], dtype=np.float64), 0.5, 2, self.width, self.height)
         self.scene = Scene()
 
     def rasterize(self):
@@ -50,7 +50,10 @@ class Shader():
             pixels.append(pix)
         for i, line in enumerate(shape.lines):
             if pixels[line[0]] is not None and pixels[line[1]] is not None:
-                pg.draw.aaline(self.surface, shape.lineColours[i], pixels[line[0]], pixels[line[1]])        
+                pg.draw.aaline(self.surface, shape.lineColours[i], pixels[line[0]], pixels[line[1]])
+        for i, point in enumerate(shape.points):
+            pix = self.draw_point(shape.pointColours[i], point, 2)
+            pixels.append(pix)
 
 class Camera():
     def __init__(self, position, orientation, r_z, r_x, width, height):

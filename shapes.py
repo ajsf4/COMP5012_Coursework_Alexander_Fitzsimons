@@ -42,20 +42,55 @@ class FloorPlane():
 class Path():
     def __init__(self, points, route):
         self.objectType = "Path"
-
         self.points = []
         self.pointColours = []
         self.lines = []
         self.lineColours = []
-        self.defaultColour = (255, 255, 255)
-        
+        self.defaultColour = (0, 255, 255)
         for i, p in enumerate(points):
             self.points.append(Point(np.array(p)))
             self.pointColours.append(self.defaultColour)
+        self.update_route(route)
+
+
+    def update_route(self, route):
+        self.lines = []
+        self.lineColours = []
+        for i, p in enumerate(self.points):
             if i < len(route)-1:
                 self.lines.append((route[i], route[i+1]))
                 self.lineColours.append(self.defaultColour)
             else:
                 self.lines.append((route[i], route[0]))
                 self.lineColours.append(self.defaultColour)
+
+
+class WeightedNetwork():
+    def __init__(self, points, weights):
+        self.objectType = "WeightedNetwork"
+
+        self.points = []
+        self.pointColours = []
+        self.weights = weights
+        self.lines = []
+        self.lineColours = []
+        self.defaultColour = np.array((255, 255, 255))
+
+        for i, p in enumerate(points):
+            self.points.append(Point(np.array(p)))
+            self.pointColours.append(self.defaultColour)
+
+        self.update_weights(weights)
+           
+    def update_weights(self, weights):
+        self.lines = []
+        self.lineColours = []
+        for pos, point in enumerate(weights):
+            for new_pos, weight in enumerate(point):
+                self.lines.append([pos, new_pos])
+                self.lineColours.append(self.defaultColour * weight)
+
+
+
+
 

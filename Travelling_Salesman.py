@@ -26,18 +26,22 @@ shader = sh.Shader(width, height)
 points = []
 route = []
 
-with open("data//vrp9.txt", "r") as f:
+with open("data//vrp8.txt", "r") as f:
     lines = f.readlines()
     for i, line in enumerate(lines):
-        n, x, y, z = line.split()
-        points.append(np.array([float(x), float(y), float(z)]))
+        n, x, y, d = line.split()
+        points.append(np.array([float(x), float(y), 0]))
         route.append(int(n)-1)
 
-random.shuffle(route)
-path = sp.Path(points, route)
-shader.scene.add_objects(path)
 
-optimiser = op.SwapperOptimiser(points, route)
+
+optimiser = op.FerromoneOptimiser(points, 5)
+ferromone_network = sp.WeightedNetwork(points, optimiser.global_ferromones)
+best_route = sp.Path(points, route)
+shader.scene.add_objects(ferromone_network)
+shader.scene.add_objects(best_route)
+
+
 
 camControl = ct.controller()
 
@@ -72,6 +76,7 @@ while running:
                 camControl.rotation[2] = -1
             if event.key == pg.K_RIGHT:
                 camControl.rotation[2] = 1
+
         if event.type == pg.KEYUP:
             if event.key == pg.K_LSHIFT:
                 speed = 8
@@ -96,11 +101,13 @@ while running:
             if event.key == pg.K_RIGHT:
                 camControl.rotation[2] = 0
     
-    camControl.transform(shader.camera, speed, 0.7, dt)
-    optimiser.optimise()
-    path = sp.Path(points, optimiser.best_route)
-    shader.scene.edit_objects(path, -1)
+    optimiser.traverse_network()
+    ferromone_network.update_weights(optimiser.global_ferromones)
+    new_best_route = optimiser.best_routes[optimiser.best_scores.index(max(optimiser.best_scores))]
+    best_route.update_route(new_best_route)
 
+
+    camControl.transform(shader.camera, speed, 0.7, dt)
     screen.blit(shader.rasterize(), (0, 0))
     pg.display.flip()
     dt = clock.tick(30) / 1000
