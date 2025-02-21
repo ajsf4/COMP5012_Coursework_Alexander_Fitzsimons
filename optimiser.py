@@ -46,10 +46,11 @@ class FerromoneOptimiser:
         self.global_ferromones = np.ones((len(self.points), len(self.points)))
         self.ant_ferromones = np.zeros((self.colony_size, len(self.points), len(self.points)))
         self.new_generation()
-        self.dist_pow = 3
-        self.ferr_pow = 3
+        self.dist_pow = 2
+        self.ferr_pow = 2
         self.best_routes = []
         self.best_scores = []
+        self.iterations = 0
 
 
     def new_generation(self):
@@ -75,26 +76,23 @@ class FerromoneOptimiser:
             self.ant_available_positions[ant].remove(ant_position)
             weights = []
             lengths = []
-            for i, pos in enumerate(self.ant_available_positions[ant]):
-                # add weight depending on the distance travelled
-                dist = self.calculate_distance(self.points[pos], self.points[ant_position])
-                
-                # add weight from ferromones
-                ferromone = self.global_ferromones[ant_position][pos]
-
-                # ferromone and distance weightings
-                weight = ((1/dist) ** self.dist_pow) * (ferromone ** self.ferr_pow)
-                
-                weights.append(weight)
-                lengths.append(dist)
-
-            # normalise to a probability ditribution
-            total = sum(weights)
-            p = np.array(weights)/total
-
-            # ant makes his decision
-            selected_point = np.random.choice([i for i in range(len(p))], 1, p=p)[0]
-            new_pos = self.ant_available_positions[ant][selected_point]
+            if len(self.ant_available_positions[ant]) > 0:
+                for i, pos in enumerate(self.ant_available_positions[ant]):
+                    dist = self.calculate_distance(self.points[pos], self.points[ant_position])
+                    ferromone = self.global_ferromones[ant_position][pos]
+                    weight = ((1/dist) ** self.dist_pow) * (ferromone ** self.ferr_pow)
+                    weights.append(weight)
+                    lengths.append(dist)
+                # normalise to a probability ditribution
+                total = sum(weights)
+                p = np.array(weights)/total
+                # ant makes his decision
+                selected_point = np.random.choice([i for i in range(len(p))], 1, p=p)[0]
+                new_pos = self.ant_available_positions[ant][selected_point]
+            else:
+                selected_point = 0
+                new_pos = self.ant_routes[ant][selected_point]
+                lengths = [self.calculate_distance(self.points[new_pos], self.points[ant_position])]
             new_positions.append(new_pos)
             self.ant_distances[ant] += lengths[selected_point]
             self.ant_ferromones[ant][ant_position][new_pos] = 1
@@ -102,7 +100,7 @@ class FerromoneOptimiser:
         self.ant_current_positions = new_positions.copy()
 
     def traverse_network(self):
-        for i in range(len(self.points)-1):
+        for i in range(len(self.points)):
             self.select_new_positions()
         ant_route_scores = 1 / np.array(self.ant_distances)
         normalised_ant_route_scores = ant_route_scores / np.sum(ant_route_scores)
@@ -113,6 +111,7 @@ class FerromoneOptimiser:
             self.global_ferromones += score * self.ant_ferromones[ant]
         self.ant_ferromones = np.zeros((self.colony_size, len(self.points), len(self.points)))
         self.global_ferromones /= np.amax(self.global_ferromones)
+        self.iterations += 1
         
             
                 

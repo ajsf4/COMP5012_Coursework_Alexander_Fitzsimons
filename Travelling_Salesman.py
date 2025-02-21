@@ -2,12 +2,13 @@ from attr import s
 import numpy as np
 import pygame as pg
 import sys
-
 import random
+
 import shader as sh
 import controller as ct
 import shapes as sp
 import optimiser as op
+import ui
 
 pg.init()
 
@@ -23,10 +24,13 @@ pg.display.set_caption("Travelling Salesman Problem")
 # Shader
 shader = sh.Shader(width, height)
 
+# User Interface
+u = ui.Graph((200,200))
+
 points = []
 route = []
 
-with open("data//vrp8.txt", "r") as f:
+with open("data//vrp10.txt", "r") as f:
     lines = f.readlines()
     for i, line in enumerate(lines):
         n, x, y, d = line.split()
@@ -41,6 +45,9 @@ best_route = sp.Path(points, route)
 shader.scene.add_objects(ferromone_network)
 shader.scene.add_objects(best_route)
 
+run_optimiser = False
+
+graph_data = [[],[]]
 
 
 camControl = ct.controller()
@@ -76,6 +83,8 @@ while running:
                 camControl.rotation[2] = -1
             if event.key == pg.K_RIGHT:
                 camControl.rotation[2] = 1
+            if event.key == pg.K_SPACE:
+                run_optimiser = not run_optimiser
 
         if event.type == pg.KEYUP:
             if event.key == pg.K_LSHIFT:
@@ -101,14 +110,20 @@ while running:
             if event.key == pg.K_RIGHT:
                 camControl.rotation[2] = 0
     
-    optimiser.traverse_network()
-    ferromone_network.update_weights(optimiser.global_ferromones)
-    new_best_route = optimiser.best_routes[optimiser.best_scores.index(max(optimiser.best_scores))]
-    best_route.update_route(new_best_route)
+    if run_optimiser:
+        optimiser.traverse_network()
+        ferromone_network.update_weights(optimiser.global_ferromones)
+        new_best_route = optimiser.best_routes[optimiser.best_scores.index(max(optimiser.best_scores))]
+        best_route.update_route(new_best_route)
+        graph_data[0].append(optimiser.iterations)
+        graph_data[1].append(optimiser.best_scores[-1])
 
+        u.update_ui(np.array(graph_data), "iterations", "best route score")
 
     camControl.transform(shader.camera, speed, 0.7, dt)
     screen.blit(shader.rasterize(), (0, 0))
+
+    screen.blit(u.surface, (0,0))
     pg.display.flip()
     dt = clock.tick(30) / 1000
 

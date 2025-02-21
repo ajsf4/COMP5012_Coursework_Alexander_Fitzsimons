@@ -25,6 +25,7 @@
     <Compile Include="controller.py" />
     <Compile Include="shader.py" />
     <Compile Include="Travelling_Salesman.py" />
+    <Compile Include="ui.py" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="data\vrp10.txt" />
