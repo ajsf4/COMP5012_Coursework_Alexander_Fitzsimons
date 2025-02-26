@@ -40,13 +40,13 @@ class FloorPlane():
 
 
 class Path():
-    def __init__(self, points, route):
+    def __init__(self, points, route, default_colour=(0,255,255)):
         self.objectType = "Path"
         self.points = []
         self.pointColours = []
         self.lines = []
         self.lineColours = []
-        self.defaultColour = (0, 255, 255)
+        self.defaultColour = default_colour
         for i, p in enumerate(points):
             self.points.append(Point(np.array(p)))
             self.pointColours.append(self.defaultColour)
