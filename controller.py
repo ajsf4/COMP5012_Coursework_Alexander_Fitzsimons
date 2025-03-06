@@ -18,5 +18,9 @@ class controller():
         ) * speed * dt
         
         camera.transform(globalTranslation, self.rotation * angular * dt)
+        
+        #print(camera.position)
+        #print(camera.orientation)
+        #print()
 
 

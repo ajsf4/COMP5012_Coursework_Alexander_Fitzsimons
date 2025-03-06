@@ -9,7 +9,8 @@ class Shader():
         self.width = width
         self.height = height
         self.surface = pg.Surface((width, height))
-        self.camera = Camera(np.array([45, 40, 100], dtype=np.float64), np.array([0.125, 0, 1.56], dtype=np.float64), 0.5, 2, self.width, self.height)
+        # Camera setup use to adjust the camera starting position and orientation
+        self.camera = Camera(np.array([130, 35, 195], dtype=np.float64), np.array([0.3, 0, 1.56], dtype=np.float64), 0.5, 2, self.width, self.height)
         self.scene = Scene()
 
     def rasterize(self):

@@ -1,5 +1,6 @@
 from hmac import new
 import numpy as np
+from numpy.random import pareto
 
 # obsolete:
 class SwapperOptimiser:
@@ -126,7 +127,7 @@ class MultiObjectiveOptimiser:
         np.random.shuffle(self.route)
         self.route_history = [self.route.copy()]
         self.base = 1.1
-        cSat, dist = self.CalculateObjectives([], [])
+        cSat, dist = self.CalculateObjectives()
         self.distance_history = [dist]
         self.customer_satisfaction_history = [cSat]
 
@@ -138,8 +139,7 @@ class MultiObjectiveOptimiser:
         #pareto front variables
         self.pareto_front = []
 
-
-    def CalculateObjectives(self, new_route, old_route):
+    def CalculateObjectives(self):
         total_customer_satisfaction = 0
         total_distance_of_route = 0
         time_taken = 0
@@ -201,6 +201,8 @@ class MultiObjectiveOptimiser:
         self.distance_history.append(routeDist)
         self.customer_satisfaction_history.append(custSat)
 
+        self.FindParetoFront()
+
     def HillClimbSwapperWithExplorationOptimise(self):
         old_route = self.route.copy()
         while any(np.array_equal(self.route, route) for route in self.route_history):
@@ -210,7 +212,7 @@ class MultiObjectiveOptimiser:
                 self.route[i], self.route[j] = self.route[j], self.route[i]
 
         route_diff = np.array(old_route) - np.array(self.route)
-        custSat, routeDist = self.CalculateObjectives(self.route, old_route)
+        custSat, routeDist = self.CalculateObjectives()
 
         # condition to revert back if we got worse
         if self.DominatesSomething(routeDist, custSat):
@@ -231,6 +233,25 @@ class MultiObjectiveOptimiser:
 
         self.FindParetoFront()
 
+    def MutateOnlyParetoFrontOptimise(self):      
+        self.route = self.route_history[np.random.choice(self.pareto_front)]
+        original = self.route.copy()
+        random_point = np.random.randint(0, len(self.route))
+        for route_index, point_index in enumerate(self.route):
+            self.route[random_point], self.route[route_index] = self.route[route_index], self.route[random_point]
+            if not any(np.array_equal(self.route, route) for route in self.route_history):
+                customer_satisfaction, total_distance = self.CalculateObjectives()
+                self.route_history.append(self.route.copy())
+                self.customer_satisfaction_history.append(customer_satisfaction)
+                self.distance_history.append(total_distance)
+            self.route = original.copy()
+
+        self.FindParetoFront()
+
+        
+
+            
+
     def FindParetoFront(self):
         self.pareto_front = []
         for solution in range(len(self.route_history)):
@@ -239,29 +260,3 @@ class MultiObjectiveOptimiser:
 
             if (all(np.logical_or(betterCustomerSatisfactionThanThese, betterDistanceThanThese))):
                 self.pareto_front.append(solution)
-
-     
-        
-
-
-
-
-
-        
-        
-        
-
-
-"""
-# test optimiser
-points = []
-
-with open("data//vrp_test.txt", "r") as f:
-    lines = f.readlines()
-    for i, line in enumerate(lines):
-        n, x, y, z = line.split()
-        points.append(np.array([float(x), float(y), float(z)]))
-
-colony = FerromoneOptimiser(points, 1)
-colony.traverse_network()
-"""

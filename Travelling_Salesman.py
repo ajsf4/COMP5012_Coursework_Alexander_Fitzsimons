@@ -11,26 +11,21 @@ import optimiser as op
 import ui
 
 pg.init()
-
 clock = pg.time.Clock()
 
 # Screen
-width, height = 800, 600
-
+width, height = 1200, 700
 screen = pg.display.set_mode((width, height))
-
 pg.display.set_caption("Travelling Salesman Problem")
 
 # Shader
 shader = sh.Shader(width, height)
 
-# User Interface
-graph1 = ui.Graph((200,200), "scatter")
+
 
 points = []
 demands = []
-
-with open("data//vrp9.txt", "r") as f:
+with open("data//vrp8.txt", "r") as f:
     lines = f.readlines()
     for i, line in enumerate(lines):
         n, x, y, d = line.split()
@@ -38,22 +33,38 @@ with open("data//vrp9.txt", "r") as f:
         demands.append(int(d))
 
 
+optimiser_A = op.MultiObjectiveOptimiser(points, demands)
+current_route_A = sp.Path(points, optimiser_A.route)
+shader.scene.add_objects(current_route_A)
+run_optimiser_A = False
 
-"""
-optimiser = op.FerromoneOptimiser(points, 5)
-ferromone_network = sp.WeightedNetwork(points, optimiser.global_ferromones)
-best_route = sp.Path(points, route)
-shader.scene.add_objects(ferromone_network)
-shader.scene.add_objects(best_route)
-"""
+optimiser_B = op.MultiObjectiveOptimiser(points, demands)
+shifted_points = (np.array(points)+np.array([0, -60, 0])).tolist()
+current_route_B = sp.Path(shifted_points, optimiser_B.route, default_colour=(255,0,255))
+shader.scene.add_objects(current_route_B)
+run_optimiser_B = False
 
-optimiser = op.MultiObjectiveOptimiser(points, demands)
-current_route = sp.Path(points, optimiser.route)
-shader.scene.add_objects(current_route)
-run_optimiser = False
+shifted_points = (np.array(points)+np.array([60, 0, 0])).tolist()
+optimiser_C = op.MultiObjectiveOptimiser(points, demands)
+current_route_C = sp.Path(shifted_points, optimiser_C.route, default_colour=(255,255,0))
+shader.scene.add_objects(current_route_C)
+run_optimiser_C = False
+# initial solutions needed to produce a pareto front that the new optimiser can use
+optimiser_C.HillClimbSwapperOptimise()
+current_route_C.update_route(optimiser_C.route)
 
-graph_data = [[],[]]
+# User Interface
+graph_A = ui.Graph((200,200), "scatter")
+graph_B = ui.Graph((200,200), "scatter")
+graph_C = ui.Graph((200,200), "scatter")
 
+graph_data_A = [[],[]]
+graph_data_B = [[],[]]
+graph_data_C = [[],[]]
+
+# testing the efficeincy of an optimiser:
+time_allowed_per_optimiser = 60
+timer = 0
 
 camControl = ct.controller()
 
@@ -61,73 +72,96 @@ running = True
 speed = 8
 dt = 0
 while running:
-
     for event in pg.event.get():
         if event.type == pg.QUIT:
             running = False
-        if event.type == pg.KEYDOWN:
+        elif event.type == pg.KEYDOWN:
             if event.key == pg.K_LSHIFT:
                 speed = 20
-            if event.key == pg.K_e:
+            elif event.key == pg.K_e:
                 camControl.translation[1] = 1
-            if event.key == pg.K_q:
+            elif event.key == pg.K_q:
                 camControl.translation[1] = -1
-            if event.key == pg.K_a:
+            elif event.key == pg.K_a:
                 camControl.translation[2] = 1
-            if event.key == pg.K_d:
+            elif event.key == pg.K_d:
                 camControl.translation[2] = -1
-            if event.key == pg.K_w:
+            elif event.key == pg.K_w:
                 camControl.translation[0] = -1
-            if event.key == pg.K_s: 
+            elif event.key == pg.K_s: 
                 camControl.translation[0] = 1
-            if event.key == pg.K_UP:
+            elif event.key == pg.K_UP:
                 camControl.rotation[0] = 1
-            if event.key == pg.K_DOWN:
+            elif event.key == pg.K_DOWN:
                 camControl.rotation[0] = -1
-            if event.key == pg.K_LEFT:
+            elif event.key == pg.K_LEFT:
                 camControl.rotation[2] = -1
-            if event.key == pg.K_RIGHT:
+            elif event.key == pg.K_RIGHT:
                 camControl.rotation[2] = 1
-            if event.key == pg.K_SPACE:
-                run_optimiser = not run_optimiser
-
-        if event.type == pg.KEYUP:
+            elif event.key == pg.K_1:
+                run_optimiser_A = not run_optimiser_A
+            elif event.key == pg.K_2:
+                run_optimiser_B = not run_optimiser_B
+            elif event.key == pg.K_3:
+                run_optimiser_C = not run_optimiser_C
+        elif event.type == pg.KEYUP:
             if event.key == pg.K_LSHIFT:
                 speed = 8
-            if event.key == pg.K_e:
+            elif event.key == pg.K_e:
                 camControl.translation[1] = 0
-            if event.key == pg.K_q:
+            elif event.key == pg.K_q:
                 camControl.translation[1] = 0
-            if event.key == pg.K_a:
+            elif event.key == pg.K_a:
                 camControl.translation[2] = 0
-            if event.key == pg.K_d:
+            elif event.key == pg.K_d:
                 camControl.translation[2] = 0
-            if event.key == pg.K_w:
+            elif event.key == pg.K_w:
                 camControl.translation[0] = 0
-            if event.key == pg.K_s: 
+            elif event.key == pg.K_s: 
                 camControl.translation[0] = 0
-            if event.key == pg.K_UP:
+            elif event.key == pg.K_UP:
                 camControl.rotation[0] = 0
-            if event.key == pg.K_DOWN:
+            elif event.key == pg.K_DOWN:
                 camControl.rotation[0] = 0
-            if event.key == pg.K_LEFT:
+            elif event.key == pg.K_LEFT:
                 camControl.rotation[2] = 0
-            if event.key == pg.K_RIGHT:
+            elif event.key == pg.K_RIGHT:
                 camControl.rotation[2] = 0
     
-    if run_optimiser:
-        optimiser.HillClimbSwapperWithExplorationOptimise()
-        current_route.update_route(optimiser.route)
-        graph_data[0] = optimiser.customer_satisfaction_history
-        graph_data[1] = optimiser.distance_history
+    if timer < 60:
+        optimiser_A.HillClimbSwapperWithExplorationOptimise()
+        current_route_A.update_route(optimiser_A.route)
 
-        graph1.update_ui(np.array(graph_data), "customer satisfaction", "distance", pareto_front=optimiser.pareto_front)
+        graph_data_A[0] = optimiser_A.customer_satisfaction_history
+        graph_data_A[1] = optimiser_A.distance_history
+        graph_A.update_ui(np.array(graph_data_A), "customer satisfaction", "distance", pareto_front=optimiser_A.pareto_front)
+    
+    elif timer < 120:
+        optimiser_B.HillClimbSwapperOptimise()
+        current_route_B.update_route(optimiser_B.route)
+
+        graph_data_B[0] = optimiser_B.customer_satisfaction_history
+        graph_data_B[1] = optimiser_B.distance_history
+        graph_B.update_ui(np.array(graph_data_B), "customer satisfaction", "distance", pareto_front=optimiser_B.pareto_front)
         
+    elif timer < 180:    
+        optimiser_C.MutateOnlyParetoFrontOptimise()
+        current_route_C.update_route(optimiser_C.route)
+
+        graph_data_C[0] = optimiser_C.customer_satisfaction_history
+        graph_data_C[1] = optimiser_C.distance_history
+        graph_C.update_ui(np.array(graph_data_C), "customer satisfaction", "distance", pareto_front=optimiser_C.pareto_front)
+
     camControl.transform(shader.camera, speed, 0.7, dt)
     screen.blit(shader.rasterize(), (0, 0))
 
-    screen.blit(graph1.surface, (0,0))
+    screen.blit(graph_A.surface, (0,0))
+    screen.blit(graph_B.surface, (0,graph_A.size[1]+5))
+    screen.blit(graph_C.surface, (0,graph_A.size[1]+graph_B.size[1]+10))
+
     pg.display.flip()
     dt = clock.tick(30) / 1000
+    timer += dt
+
 
 sys.exit()
