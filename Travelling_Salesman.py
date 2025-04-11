@@ -53,14 +53,27 @@ run_optimiser_C = False
 optimiser_C.HillClimbSwapperOptimise()
 current_route_C.update_route(optimiser_C.route)
 
+shifted_points = (np.array(points)+np.array([60, -60, 0])).tolist()
+optimiser_D = op.MultiObjectiveOptimiser(points, demands)
+current_route_D = sp.Path(shifted_points, optimiser_D.route, default_colour=(255,0,0))
+shader.scene.add_objects(current_route_D)
+run_optimiser_D = False
+# initial solutions needed to produce a pareto front that the new optimiser can use
+optimiser_D.HillClimbSwapperOptimise()
+current_route_D.update_route(optimiser_D.route)
+
 # User Interface
-graph_A = ui.Graph((200,200), "scatter")
-graph_B = ui.Graph((200,200), "scatter")
-graph_C = ui.Graph((200,200), "scatter")
+graph_A = ui.Graph((150,150), "scatter")
+graph_B = ui.Graph((150,150), "scatter")
+graph_C = ui.Graph((150,150), "scatter")
+graph_D = ui.Graph((150,150), "scatter")
+
+
 
 graph_data_A = [[],[]]
 graph_data_B = [[],[]]
 graph_data_C = [[],[]]
+graph_data_D = [[],[]]
 
 # testing the efficeincy of an optimiser:
 time_allowed_per_optimiser = 60
@@ -104,6 +117,8 @@ while running:
                 run_optimiser_B = not run_optimiser_B
             elif event.key == pg.K_3:
                 run_optimiser_C = not run_optimiser_C
+            elif event.key == pg.K_4:
+                run_optimiser_D = not run_optimiser_D
         elif event.type == pg.KEYUP:
             if event.key == pg.K_LSHIFT:
                 speed = 8
@@ -150,7 +165,15 @@ while running:
 
         graph_data_C[0] = optimiser_C.customer_satisfaction_history
         graph_data_C[1] = optimiser_C.distance_history
-        graph_C.update_ui(np.array(graph_data_C), "customer satisfaction", "distance", pareto_front=optimiser_C.pareto_front)
+        graph_C.update_ui(np.array(graph_data_C), "customer satisfaction", "distance", pareto_front=optimiser_C.pareto_front)#
+    
+    elif timer < 240:    
+        optimiser_D.MutateParetoAndExploreOptimise()
+        current_route_D.update_route(optimiser_D.route)
+
+        graph_data_D[0] = optimiser_D.customer_satisfaction_history
+        graph_data_D[1] = optimiser_D.distance_history
+        graph_D.update_ui(np.array(graph_data_D), "customer satisfaction", "distance", pareto_front=optimiser_D.pareto_front)
 
     camControl.transform(shader.camera, speed, 0.7, dt)
     screen.blit(shader.rasterize(), (0, 0))
@@ -158,6 +181,7 @@ while running:
     screen.blit(graph_A.surface, (0,0))
     screen.blit(graph_B.surface, (0,graph_A.size[1]+5))
     screen.blit(graph_C.surface, (0,graph_A.size[1]+graph_B.size[1]+10))
+    screen.blit(graph_D.surface, (0,graph_A.size[1]+graph_B.size[1]+graph_C.size[1]+15))
 
     pg.display.flip()
     dt = clock.tick(30) / 1000

@@ -131,10 +131,14 @@ class MultiObjectiveOptimiser:
         self.distance_history = [dist]
         self.customer_satisfaction_history = [cSat]
 
-        # hill climber exploration variables
+        # exploration variables
         self.explore_threshold = 5 #int(len(points) / 4)
         self.attempts_since_change = 0
         self.swaps_per_iteration = 1
+
+        # variables for mutate paretos + explore
+        self.tested = []
+        self.number_of_swaps = 1
         
         #pareto front variables
         self.pareto_front = []
@@ -233,7 +237,7 @@ class MultiObjectiveOptimiser:
 
         self.FindParetoFront()
 
-    def MutateOnlyParetoFrontOptimise(self):      
+    def MutateOnlyParetoFrontOptimise(self):
         self.route = self.route_history[np.random.choice(self.pareto_front)]
         original = self.route.copy()
         random_point = np.random.randint(0, len(self.route))
@@ -248,10 +252,38 @@ class MultiObjectiveOptimiser:
 
         self.FindParetoFront()
 
+
+
+    def MutateParetoAndExploreOptimise(self):
+        test_route = np.random.choice(self.pareto_front)
+        available_test_routes = list(set(self.pareto_front) - set(self.tested)) # gets the intesection of routes that were mutated and tested with the current pareto front
+        print(available_test_routes)
+        if len(available_test_routes) > 0: # if there are available routes to test, test them
+            test_route = np.random.choice(available_test_routes)
+        else: # if there are no available routes to test, then reset the tested list and explore each route more deeply by having more starting points
+            test_route = np.random.choice(self.pareto_front)
+            self.tested = []
+            self.number_of_swaps += 1
+        self.tested.append(test_route)
+
+        original = self.route.copy()
+
+        random_points = [np.random.randint(0, len(self.route)) for i in range(self.number_of_swaps)]
+        for route_index, point_index in enumerate(self.route):
+            for swap in range(self.number_of_swaps):
+                additional_point = np.random.randint(0, len(self.route))
+                for random_point in random_points:
+                    self.route[random_point], self.route[route_index] = self.route[route_index], self.route[random_point]
+            if not any(np.array_equal(self.route, route) for route in self.route_history):
+                customer_satisfaction, total_distance = self.CalculateObjectives()
+                self.route_history.append(self.route.copy())
+                self.customer_satisfaction_history.append(customer_satisfaction)
+                self.distance_history.append(total_distance)
+            self.route = original.copy()
+
+        self.FindParetoFront()
+
         
-
-            
-
     def FindParetoFront(self):
         self.pareto_front = []
         for solution in range(len(self.route_history)):
