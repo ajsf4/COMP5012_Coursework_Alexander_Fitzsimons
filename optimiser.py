@@ -1,6 +1,7 @@
 from hmac import new
 import numpy as np
 from numpy.random import pareto
+from pkg_resources import dist_factory
 
 # obsolete:
 class SwapperOptimiser:
@@ -120,16 +121,14 @@ class FerromoneOptimiser:
 
 # a simple optimiser that also accounts for the demand of each city 
 class MultiObjectiveOptimiser:
-    def __init__(self, points, demands):
+    def __init__(self, points, demands, percentile=0.5):
         self.points = np.array(points)
         self.demands = np.array(demands)
         self.route = np.arange(len(points))
         np.random.shuffle(self.route)
         self.route_history = [self.route.copy()]
         self.base = 1.1
-        cSat, dist = self.CalculateObjectives()
-        self.distance_history = [dist]
-        self.customer_satisfaction_history = [cSat]
+        self.all_distances = [[np.linalg.norm(i - j) for j in self.points] for i in self.points]
 
         # exploration variables
         self.explore_threshold = 5 #int(len(points) / 4)
@@ -139,7 +138,17 @@ class MultiObjectiveOptimiser:
         # variables for mutate paretos + explore
         self.tested = []
         self.number_of_swaps = 1
-        
+
+        # reducer variables
+        self.dist_per_point_history = [[]]
+        self.cSat_per_point_history = [[]]
+        self.percentile = percentile
+
+        cSat, dist = self.CalculateObjectives()
+        self.distance_history = [dist]
+        self.customer_satisfaction_history = [cSat]
+
+
         #pareto front variables
         self.pareto_front = []
 
@@ -154,7 +163,7 @@ class MultiObjectiveOptimiser:
         prev_i = self.route[-1]
         for i in self.route:
             #finding the route distance:
-            d = np.linalg.norm(self.points[i] - self.points[prev_i])
+            d = self.all_distances[prev_i][i]
             total_distance_of_route += d
             time_taken += d*time_per_unit_of_distance
 
@@ -165,10 +174,15 @@ class MultiObjectiveOptimiser:
             #  ... and satisfaction decreases exponentially as time taken increases according to a given demand.
             exponent = (- time_taken * self.demands[i])/10000
             cs = np.pow(self.base, exponent)
+
+            self.dist_per_point_history[-1].append(d)
+            self.cSat_per_point_history[-1].append(cs)
             total_customer_satisfaction += cs
             time_taken += time_per_unit_of_demand*self.demands[i]
 
             prev_i = i.copy()
+        self.dist_per_point_history.append([])
+        self.cSat_per_point_history.append([])
         return total_customer_satisfaction, total_distance_of_route
 
     def RandomWalkOptimise(self):
@@ -179,7 +193,7 @@ class MultiObjectiveOptimiser:
         self.distance_history.append(routeDist)
         self.customer_satisfaction_history.append(custSat)
 
-    def DominatesSomething(self, d, c):
+    def Undominated(self, d, c):
         if c > max(self.customer_satisfaction_history) or d < min(self.distance_history):
             return True
         else:
@@ -196,7 +210,7 @@ class MultiObjectiveOptimiser:
         custSat, routeDist  = self.CalculateObjectives()
 
         # condition to revert back if we got worse
-        if self.DominatesSomething(routeDist, custSat):
+        if self.Undominated(routeDist, custSat):
             pass
         else:
             self.route[i], self.route[j] = self.route[j], self.route[i]
@@ -219,7 +233,7 @@ class MultiObjectiveOptimiser:
         custSat, routeDist = self.CalculateObjectives()
 
         # condition to revert back if we got worse
-        if self.DominatesSomething(routeDist, custSat):
+        if self.Undominated(routeDist, custSat):
             self.attempts_since_change = 0
             self.swaps_per_iteration = 1
 
@@ -252,12 +266,9 @@ class MultiObjectiveOptimiser:
 
         self.FindParetoFront()
 
-
-
     def MutateParetoAndExploreOptimise(self):
         test_route = np.random.choice(self.pareto_front)
         available_test_routes = list(set(self.pareto_front) - set(self.tested)) # gets the intesection of routes that were mutated and tested with the current pareto front
-        print(available_test_routes)
         if len(available_test_routes) > 0: # if there are available routes to test, test them
             test_route = np.random.choice(available_test_routes)
         else: # if there are no available routes to test, then reset the tested list and explore each route more deeply by having more starting points
@@ -283,7 +294,43 @@ class MultiObjectiveOptimiser:
 
         self.FindParetoFront()
 
-        
+    def ReducerOptimiser(self):
+
+        max_cSat_per_point = max(self.cSat_per_point_history[-2])
+        min_cSat_per_point = min(self.cSat_per_point_history[-2])
+        range_cSat_per_point = max_cSat_per_point - min_cSat_per_point
+        cSat_threshold = self.percentile * range_cSat_per_point + min_cSat_per_point
+
+        max_dist_per_point = max(self.dist_per_point_history[-2])
+        min_dist_per_point = min(self.dist_per_point_history[-2])
+        range_dist_per_point = max_dist_per_point - min_dist_per_point
+        dist_threshold = (1-self.percentile) * range_dist_per_point + min_dist_per_point
+
+
+        bad_points = []
+        for i in range(len(self.route)):
+            if self.cSat_per_point_history[-2][i] < cSat_threshold or self.dist_per_point_history[-2][i] > dist_threshold:
+                bad_points.append(i)
+        np.random.shuffle(bad_points)
+
+
+        # reduce bad points:
+        original_route = self.route.copy()
+        for i in range(0, len(bad_points), 2):
+            self.route[bad_points[i]], self.route[bad_points[i-1]] = self.route[bad_points[i-1]], self.route[bad_points[i]]
+
+        cSat, dist = self.CalculateObjectives()
+        self.route_history.append(self.route.copy())
+        if self.Undominated(dist, cSat):
+            pass
+        else:
+            self.route = original_route.copy()  
+            
+        self.distance_history.append(dist)
+        self.customer_satisfaction_history.append(cSat)
+
+        self.FindParetoFront()
+
     def FindParetoFront(self):
         self.pareto_front = []
         for solution in range(len(self.route_history)):
