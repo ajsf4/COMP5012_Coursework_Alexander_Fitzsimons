@@ -3,6 +3,9 @@ import numpy as np
 from numpy.random import pareto
 from pkg_resources import dist_factory
 
+# this is the base of the exponent used for calculating customer satisfaction
+exp_base = 1.1
+
 # obsolete:
 class SwapperOptimiser:
     def __init__(self, points, route):
@@ -127,7 +130,6 @@ class MultiObjectiveOptimiser:
         self.route = np.arange(len(points))
         np.random.shuffle(self.route)
         self.route_history = [self.route.copy()]
-        self.base = 1.1
         self.all_distances = [[np.linalg.norm(i - j) for j in self.points] for i in self.points]
 
         # exploration variables
@@ -173,7 +175,7 @@ class MultiObjectiveOptimiser:
             #  ... and that for non zero demand and non zero time taken, satisfaction decreases exponentially according to a given time taken ...
             #  ... and satisfaction decreases exponentially as time taken increases according to a given demand.
             exponent = (- time_taken * self.demands[i])/10000
-            cs = np.pow(self.base, exponent)
+            cs = np.pow(exp_base, exponent)
 
             self.dist_per_point_history[-1].append(d)
             self.cSat_per_point_history[-1].append(cs)
@@ -185,6 +187,21 @@ class MultiObjectiveOptimiser:
         self.cSat_per_point_history.append([])
         return total_customer_satisfaction, total_distance_of_route
 
+    def Undominated(self, d, c):
+        if c > max(self.customer_satisfaction_history) or d < min(self.distance_history):
+            return True
+        else:
+            return False
+
+    def FindParetoFront(self):
+        self.pareto_front = []
+        for solution in range(len(self.route_history)):
+            betterDistanceThanThese = self.distance_history[solution] <= self.distance_history
+            betterCustomerSatisfactionThanThese = self.customer_satisfaction_history[solution] >= self.customer_satisfaction_history
+
+            if (all(np.logical_or(betterCustomerSatisfactionThanThese, betterDistanceThanThese))):
+                self.pareto_front.append(solution)
+
     def RandomWalkOptimise(self):
         while any(np.array_equal(self.route, route) for route in self.route_history):
             np.random.shuffle(self.route)
@@ -192,12 +209,6 @@ class MultiObjectiveOptimiser:
         custSat, routeDist = self.CalculateObjectives()
         self.distance_history.append(routeDist)
         self.customer_satisfaction_history.append(custSat)
-
-    def Undominated(self, d, c):
-        if c > max(self.customer_satisfaction_history) or d < min(self.distance_history):
-            return True
-        else:
-            return False
 
     def HillClimbSwapperOptimise(self):
         i=0
@@ -295,7 +306,6 @@ class MultiObjectiveOptimiser:
         self.FindParetoFront()
 
     def ReducerOptimiser(self):
-
         max_cSat_per_point = max(self.cSat_per_point_history[-2])
         min_cSat_per_point = min(self.cSat_per_point_history[-2])
         range_cSat_per_point = max_cSat_per_point - min_cSat_per_point
@@ -331,11 +341,78 @@ class MultiObjectiveOptimiser:
 
         self.FindParetoFront()
 
-    def FindParetoFront(self):
-        self.pareto_front = []
-        for solution in range(len(self.route_history)):
-            betterDistanceThanThese = self.distance_history[solution] <= self.distance_history
-            betterCustomerSatisfactionThanThese = self.customer_satisfaction_history[solution] >= self.customer_satisfaction_history
 
-            if (all(np.logical_or(betterCustomerSatisfactionThanThese, betterDistanceThanThese))):
-                self.pareto_front.append(solution)
+class MultiObjectiveAntColonyOptimiser:
+    def __init__(self, points, demands, colony_size):
+        self.points = points
+        self.route = []
+        self.colony_size = colony_size
+        self.demands = demands
+
+        self.current_colony_routes = [[] for i in range(colony_size)]
+
+        self.distances = [[np.linalg.norm(i - j) for j in self.points] for i in self.points]
+        self.global_ferromones = np.ones((len(self.points), len(self.points)))
+
+        self.distance_history = []
+        self.customer_satisfaction_history = []
+        self.route_history = []
+
+        self.objective_preference = 0.5
+
+    def calculate_customer_satisfaction(self, time_taken, demand):
+        # formula determined by requiring that zero demand has maximum satisfaction no matter the time taken ...
+        #  ... and that zero time taken has maximum satisfaction no matter the demand ...
+        #  ... and that for non zero demand and non zero time taken, satisfaction decreases exponentially according to a given time taken ...
+        #  ... and satisfaction decreases exponentially as time taken increases according to a given demand.
+        exponent = (- time_taken * demand)/10000
+        cs = np.power(exp_base, exponent)
+        return cs
+
+    def get_probabilities(self, ant_position, available_positions, time_taken):
+        weights = []
+        for pos in available_positions:
+            dist = self.distances[ant_position][pos]
+            cSat = self.calculate_customer_satisfaction(time_taken+dist, self.demands[pos])
+            ferromone = self.global_ferromones[ant_position][pos]
+            weight = ((1/dist) * self.objective_preference + cSat * (1-self.objective_preference)) * ferromone
+            weights.append(weight)
+        total = sum(weights)
+        p = np.array(weights)/total
+        return p
+
+    def optimise(self):
+        best_ferromone = 0
+        for route in range(self.colony_size):
+            available_positions = list(range(len(self.points)))
+            current_position = np.random.randint(0, len(self.points))
+            available_positions.remove(current_position)
+            total_dist = 0
+            total_cSat = 0
+            while len(available_positions) > 0:
+                p = self.get_probabilities(current_position, available_positions, total_dist)
+                selected_point = np.random.choice(available_positions, 1, p=p)[0]
+                self.current_colony_routes[route].append(selected_point)
+                total_dist += self.distances[current_position][selected_point]
+                total_cSat += self.calculate_customer_satisfaction(total_dist, self.demands[selected_point])
+                current_position = selected_point
+                available_positions.remove(current_position)
+
+            # lay down ferromones
+            route_ferromone = ((1/total_dist) * self.objective_preference + total_cSat * (1-self.objective_preference))
+            for i in range(len(self.current_colony_routes[route])):
+                self.global_ferromones[self.current_colony_routes[route][i]][self.current_colony_routes[route][i-1]] += route_ferromone
+
+            if route_ferromone > best_ferromone:
+                best_ferromone = route_ferromone
+                self.route = self.current_colony_routes[route].copy()
+
+            self.distance_history.append(total_dist)
+            self.customer_satisfaction_history.append(total_cSat)
+
+            self.route_history.append(self.current_colony_routes[route].copy())
+
+
+        # normalise ferromones:
+        self.global_ferromones /= np.amax(self.global_ferromones)
+

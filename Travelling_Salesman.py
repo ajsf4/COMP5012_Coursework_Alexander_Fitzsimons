@@ -60,9 +60,11 @@ for i in range(0, 11):
     Map_Objects.append(r.MapObj(np.array([330*i, 0]), np.array((75, 75)), (255, 255, 0), points, initial_connections))
     camera.add_to_scene(Map_Objects[-1])
     
-    optimiser_E_variants.append(op.MultiObjectiveOptimiser(points, demands, percentile=(i+1)*5))
-    
-    Graph_Objects.append(r.graph(np.array([330*i, 330]), np.array([optimiser_E_variants[-1].customer_satisfaction_history,optimiser_E_variants[-1].distance_history]), (330, 300), "Graph E", "X Axis", "Y Axis"))
+    optimiser_E_variants.append(op.MultiObjectiveAntColonyOptimiser(points, demands, 10))
+    optimiser_E_variants[-1].objective_preference = i/10
+    optimiser_E_variants[-1].optimise()
+
+    Graph_Objects.append(r.graph(np.array([330*i, 330]), np.array([optimiser_E_variants[-1].customer_satisfaction_history, optimiser_E_variants[-1].distance_history]), (330, 300), "Graph E", "X Axis", "Y Axis"))
     camera.add_to_scene(Graph_Objects[-1])
     
 
@@ -124,10 +126,10 @@ while running:
         map_D.update(optimiser_D.route)
         """
         for i in range(0, 11):
-            optimiser_E_variants[i].ReducerOptimiser()
+            optimiser_E_variants[i].optimise()
             Map_Objects[i].update(optimiser_E_variants[i].route)
 
-            Graph_Objects[i].update(np.array([optimiser_E_variants[i].customer_satisfaction_history, optimiser_E_variants[i].distance_history]))
+            Graph_Objects[i].update([optimiser_E_variants[i].customer_satisfaction_history, optimiser_E_variants[i].distance_history])
             Graph_Objects[i].draw_surface() 
 
     # update graphs
