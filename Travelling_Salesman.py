@@ -29,46 +29,33 @@ points = np.array(points)
     
 camera = r.Camera2D((width, height))
 
-"""
-map_A = r.MapObj(np.array([0, 0]), np.array((75, 75)), (255, 0, 0), points, initial_connections)
-camera.add_to_scene(map_A)
-optimiser_A = op.MultiObjectiveOptimiser(points, demands)
-graph_A = r.graph(np.array([0, 330]), np.array([optimiser_A.customer_satisfaction_history,optimiser_A.distance_history]), (330, 300), "Graph A", "X Axis", "Y Axis")
-camera.add_to_scene(graph_A)
 
-map_B = r.MapObj(np.array([330, 0]), np.array((75, 75)), (0, 255, 0), points, initial_connections)
-camera.add_to_scene(map_B)
-optimiser_B = op.MultiObjectiveOptimiser(points, demands)
-graph_B = r.graph(np.array([330, 330]), np.array([optimiser_B.customer_satisfaction_history,optimiser_B.distance_history]), (330, 300), "Graph B", "X Axis", "Y Axis")
-camera.add_to_scene(graph_B)
+ant_optimiser_variants = []
+moga_optimiser = op.MultiObjectiveGeneticAlgorithm(points, demands, 10)
+moga_optimiser.next_generation()
+moga_graph = r.GraphObj(np.array([0, 330]), np.array((moga_optimiser.cSat_history, moga_optimiser.dist_history)), (330, 300), "MOGA Optimiser", "X Axis", "Y Axis")
+camera.add_to_scene(moga_graph)
 
-map_C = r.MapObj(np.array([0, 330]), np.array((75, 75)), (0, 0, 255), points, initial_connections)
-camera.add_to_scene(map_C)
-optimiser_C = op.MultiObjectiveOptimiser(points, demands)
-optimiser_C.HillClimbSwapperOptimise()
-
-map_D = r.MapObj(np.array([330, 330]), np.array((75, 75)), (255, 0, 255), points, initial_connections)
-camera.add_to_scene(map_D)
-optimiser_D = op.MultiObjectiveOptimiser(points, demands)
-optimiser_D.HillClimbSwapperOptimise()
-"""
-
-optimiser_E_variants = []
 Map_Objects = []
 Graph_Objects = []
 for i in range(0, 11):
-    Map_Objects.append(r.MapObj(np.array([330*i, 0]), np.array((75, 75)), (255, 255, 0), points, initial_connections))
+    # Genetic Algorithm
+    Map_Objects.append(r.MapObj(np.array([330*i, 0]), np.array((75, 75)), (255, 0, 0), points, initial_connections))
+    camera.add_to_scene(Map_Objects[-1])
+
+
+    
+    # Ant Colony Optimiser
+    Map_Objects.append(r.MapObj(np.array([330*i, 660]), np.array((75, 75)), (255, 255, 0), points, initial_connections))
     camera.add_to_scene(Map_Objects[-1])
     
-    optimiser_E_variants.append(op.MultiObjectiveAntColonyOptimiser(points, demands, 10))
-    optimiser_E_variants[-1].objective_preference = i/10
-    optimiser_E_variants[-1].optimise()
+    ant_optimiser_variants.append(op.MultiObjectiveAntColonyOptimiser(points, demands, 10))
+    ant_optimiser_variants[-1].objective_preference = i/10
+    ant_optimiser_variants[-1].optimise()
 
-    Graph_Objects.append(r.graph(np.array([330*i, 330]), np.array([optimiser_E_variants[-1].customer_satisfaction_history, optimiser_E_variants[-1].distance_history]), (330, 300), "Graph E", "X Axis", "Y Axis"))
+    Graph_Objects.append(r.GraphObj(np.array([330*i, 990]), np.array([ant_optimiser_variants[-1].customer_satisfaction_history, ant_optimiser_variants[-1].distance_history]), (330, 300), "Ant Colony Optimiser", "X Axis", "Y Axis"))
     camera.add_to_scene(Graph_Objects[-1])
-    
-
-      
+ 
 
 running = True
 speed = 8
@@ -112,34 +99,25 @@ while running:
 
     if arrow_vector[0] == 0 and arrow_vector[1] == 0:
 
-        """
-        optimiser_A.HillClimbSwapperOptimise()
-        map_A.update(optimiser_A.route)
-    
-        optimiser_B.HillClimbSwapperWithExplorationOptimise()
-        map_B.update(optimiser_B.route)
-        
-        optimiser_C.MutateOnlyParetoFrontOptimise()
-        map_C.update(optimiser_C.route)
-    
-        optimiser_D.MutateParetoAndExploreOptimise()
-        map_D.update(optimiser_D.route)
-        """
-        for i in range(0, 11):
-            optimiser_E_variants[i].optimise()
-            Map_Objects[i].update(optimiser_E_variants[i].route)
+        moga_optimiser.next_generation()
+        moga_graph.update([moga_optimiser.cSat_history,
+                           moga_optimiser.dist_history], 
+                           moga_optimiser.pareto_front)
 
-            Graph_Objects[i].update([optimiser_E_variants[i].customer_satisfaction_history, optimiser_E_variants[i].distance_history])
+        moga_graph.draw_surface()
+
+        for i in range(0, 10):
+            # genetic algorithm
+            Map_Objects[i].update(moga_optimiser.population[i])
+
+            # ant colony optimiser
+            ant_optimiser_variants[i].optimise()
+            Map_Objects[i*2].update(ant_optimiser_variants[i].route)
+            Graph_Objects[i].update([ant_optimiser_variants[i].customer_satisfaction_history,
+                                    ant_optimiser_variants[i].distance_history],
+                                    ant_optimiser_variants[i].pareto_front)
             Graph_Objects[i].draw_surface() 
 
-    # update graphs
-    """
-    graph_A.update(np.array([optimiser_A.customer_satisfaction_history, optimiser_A.distance_history]))
-    graph_A.draw_surface() 
-
-    graph_B.update(np.array([optimiser_B.customer_satisfaction_history, optimiser_B.distance_history]))
-    graph_B.draw_surface() 
-    """
 
     
     

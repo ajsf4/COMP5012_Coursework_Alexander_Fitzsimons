@@ -34,7 +34,7 @@ class MapObj:
             pg.draw.circle(self.surface, self.colour, self.points[c], 5)
 
 
-class graph:
+class GraphObj:
     def __init__(self, position, initial_data, size, title, x_label, y_label):
         self.position = position
         self.data = initial_data
@@ -49,18 +49,20 @@ class graph:
         self.rangeX = self.maxX - self.minX
         self.rangeY = self.maxY - self.minY
 
-        self.axes_colour = (0, 100, 255)
+        self.axes_colour = (100, 200, 0)
         self.datapoint_colour = (255, 0, 0)
         self.text_colour = (0, 255, 0)
 
         self.font = pg.font.SysFont("consolas", 10)
+        self.t = title
         self.title = self.font.render(title, True, self.text_colour)
         self.x_label = self.font.render(x_label, True, self.text_colour)
         self.y_label = pg.transform.rotate(self.font.render(y_label, True, self.text_colour), 90)
 
-        
+        self.pareto_front = []
 
-    def update(self, new_data):
+    def update(self, new_data, pareto_front):
+        self.pareto_front = pareto_front.copy()
         self.data = new_data.copy()
         self.minX = min(self.data[0])
         self.maxX = max(self.data[0])
@@ -99,7 +101,10 @@ class graph:
 
         # draw the data points
         if len(self.data[0]) >= 2 and self.rangeX != 0 and self.rangeY != 0:
-            for x, y in zip(self.data[0], self.data[1]):
+            for i, x, y in zip(list(range(len(self.data[0]))), self.data[0], self.data[1]):
                 plot_x = p2[0] + (x-self.minX) * graph_width / self.rangeX
                 plot_y = p2[1] - (y-self.minY) * graph_height / self.rangeY
-                pg.draw.circle(self.surface, self.datapoint_colour, (int(plot_x), int(plot_y)), 2)
+                if i in self.pareto_front:
+                    pg.draw.circle(self.surface, (0, 0, 255), (int(plot_x), int(plot_y)), 2)
+                else:
+                    pg.draw.circle(self.surface, self.datapoint_colour, (int(plot_x), int(plot_y)), 2)
