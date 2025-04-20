@@ -60,9 +60,11 @@ class GraphObj:
         self.y_label = pg.transform.rotate(self.font.render(y_label, True, self.text_colour), 90)
 
         self.pareto_front = []
+        self.current_population = []
 
-    def update(self, new_data, pareto_front):
+    def update(self, new_data, pareto_front, current_population):
         self.pareto_front = pareto_front.copy()
+        self.current_population = current_population.copy()
         self.data = new_data.copy()
         self.minX = min(self.data[0])
         self.maxX = max(self.data[0])
@@ -106,5 +108,7 @@ class GraphObj:
                 plot_y = p2[1] - (y-self.minY) * graph_height / self.rangeY
                 if i in self.pareto_front:
                     pg.draw.circle(self.surface, (0, 0, 255), (int(plot_x), int(plot_y)), 2)
+                elif i in self.current_population:
+                    pg.draw.circle(self.surface, (255, 255, 0), (int(plot_x), int(plot_y)), 2)
                 else:
                     pg.draw.circle(self.surface, self.datapoint_colour, (int(plot_x), int(plot_y)), 2)

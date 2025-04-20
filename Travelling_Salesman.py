@@ -28,7 +28,7 @@ with open("data//vrp8.txt", "r") as f:
 points = np.array(points)
 
 optimiser = op.MOGA_PTSP(points, demands, 10)
-graph = r.GraphObj(np.array([0,0]), np.array([optimiser.demand_history, optimiser.distance_history]), np.array([300,300]), "random walk", "remaining demand", "total distance")
+graph = r.GraphObj(np.array([0,0]), np.array(op.extract_objectives(optimiser.solution_history)), np.array([300,300]), "random walk", "total distance", "remaining demand")
    
 camera = r.Camera2D((width, height))
 camera.add_to_scene(graph)
@@ -38,10 +38,12 @@ speed = 8
 
 horr = 0
 vert = 0
+space = False
 
 dt = 0
 while running:
     screen.fill((0, 0, 0))
+    space = False
     for event in pg.event.get():
         if event.type == pg.QUIT:
             running = False
@@ -65,14 +67,17 @@ while running:
                 horr = 0
             elif event.key == pg.K_RIGHT:
                 horr = 0
+            elif event.key == pg.K_SPACE:
+                space = True
 
 
     arrow_vector = speed * np.array([horr, vert], dtype=np.float64) / np.linalg.norm(np.array([horr, vert])) if np.linalg.norm(np.array([horr, vert])) != 0 else np.array([0, 0])
     camera.position -= arrow_vector
 
-    if arrow_vector[0] == 0 and arrow_vector[1] == 0:
+    if arrow_vector[0] == 0 and arrow_vector[1] == 0 and space:
         optimiser.random_walk_optimise()
-        graph.update(np.array([optimiser.demand_history, optimiser.distance_history]), optimiser.pareto_front)
+        graph_data = np.array(op.extract_objectives(optimiser.solution_history))
+        graph.update(graph_data, optimiser.pareto_front, [])
         graph.draw_surface()
     camera.render()
     screen.blit(camera.surface, (0,0))
