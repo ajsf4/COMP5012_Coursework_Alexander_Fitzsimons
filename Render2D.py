@@ -83,13 +83,13 @@ class GraphObj:
         self.graph_width = self.p3[0] - self.p1[0]
         self.graph_height = self.p3[1] - self.p1[1]
 
-        self.label_surface = pg.Surface((self.size[0]/2.5, self.size[1]/6))
+        self.label_surface = pg.Surface((self.size[0]/2.5, self.size[1]/3))
 
         self.hypervolume_indicator = 0
 
     def sort_pareto_front(self):
         pareto_distances = [self.data[0][i] for i in self.pareto_front]
-        sorted_pareto_indices = np.argsort(pareto_distances)
+        sorted_pareto_indices = np.flip(np.argsort(pareto_distances))       
         self.sorted_pareto_front = [self.pareto_front[i] for i in sorted_pareto_indices]
 
     def update(self, new_data, pareto_front):
@@ -108,15 +108,29 @@ class GraphObj:
 
         self.calculate_hypervolume()
 
-        label_heading = self.font.render("Metrics:", True, (0,200,0))
+        label_heading = self.font.render("Key:", True, (0,200,0))
         label_H_Indicator1 = self.font.render("Normalised Hypervolume ", True, (0,200,0))
         label_H_Indicator2 = self.font.render(f"Indicator = {self.hypervolume_indicator:.4f}", True, (0,200,0))
+
+        label_red_key = self.font.render(" = Historical Solution", True, (0, 200, 0))
+        label_yellow_key = self.font.render(" = Just Added", True, (0, 200, 0))
+        label_cyan_key = self.font.render(" = Next Generation", True, (0, 200, 0))
+        label_blue_key = self.font.render(" = Pareto Front", True, (0, 200, 0))
 
         self.label_surface.fill((10, 20, 10))
         pg.draw.rect(self.label_surface, (0, 200, 0), (0, 0, self.label_surface.get_width(), self.label_surface.get_height()), width=2)
         self.label_surface.blit(label_heading, (5,5))
-        self.label_surface.blit(label_H_Indicator1, (5,30))
-        self.label_surface.blit(label_H_Indicator2, (5,45))
+        self.label_surface.blit(label_red_key, (10,30))
+        pg.draw.circle(self.label_surface, (255, 0, 0), (10, 37), 3)
+        self.label_surface.blit(label_yellow_key, (10,50))
+        pg.draw.circle(self.label_surface, (255, 255, 0), (10, 57), 3)
+        self.label_surface.blit(label_cyan_key, (10,70))
+        pg.draw.circle(self.label_surface, (0, 200, 250), (10, 77), 3)
+        self.label_surface.blit(label_blue_key, (10,90))
+        pg.draw.circle(self.label_surface, (0, 0, 255), (10, 97), 2)
+
+        self.label_surface.blit(label_H_Indicator1, (5, 125))
+        self.label_surface.blit(label_H_Indicator2, (5, 140))
 
     def draw_surface(self):
         self.surface.fill((0,0,0))
@@ -153,12 +167,12 @@ class GraphObj:
             for i, x, y in zip(list(range(len(self.data[0]))), self.data[0], self.data[1]):                
                 if i in self.highlight_population:
                     plot_x, plot_y = self.plot_xy(x,y)
-                    pg.draw.circle(self.surface, (0, 200, 250), (int(plot_x), int(plot_y)), 6)
+                    pg.draw.circle(self.surface, (0, 200, 250), (int(plot_x), int(plot_y)), 3)
 
             for i, x, y in zip(list(range(len(self.data[0]))), self.data[0], self.data[1]):
                 if i in self.pareto_front:
                     plot_x, plot_y = self.plot_xy(x,y)
-                    pg.draw.circle(self.surface, (0, 0, 255), (int(plot_x), int(plot_y)), 3)
+                    pg.draw.circle(self.surface, (0, 0, 255), (int(plot_x), int(plot_y)), 2)
 
         self.surface.blit(self.label_surface, (self.size[0] - self.label_surface.get_width(), 0))
 
@@ -173,12 +187,14 @@ class GraphObj:
         label_heading = self.font.render("Selected Solution:", True, (0, 200, 0))
         label_demand = self.font.render(f"Demand = {y:.2f}", True, (0, 200, 0))
         label_distance = self.font.render(f"Distance = {x:.2f}", True, (0, 200, 0))
+        label_id = self.font.render(f"Solution number = {self.sorted_pareto_front[selected_solution]}", True, (0,200,0))
 
         self.label_surface.fill((10, 20, 10))
         pg.draw.rect(self.label_surface, (0, 200, 0), (0, 0, self.label_surface.get_width(), self.label_surface.get_height()), width=2)
         self.label_surface.blit(label_heading, (5,5))
         self.label_surface.blit(label_demand, (5,30))
-        self.label_surface.blit(label_distance, (5,55))    
+        self.label_surface.blit(label_distance, (5,55))
+        self.label_surface.blit(label_id, (5, 80))
 
     def plot_xy(self, x, y):
         plot_x = self.p2[0] + (x-self.minX) * self.graph_width / self.rangeX
@@ -187,28 +203,34 @@ class GraphObj:
         return plot_x, plot_y
 
     def calculate_hypervolume(self):
-        ref_distance = max(self.data[0])
-        ref_demand = max(self.data[1])
-        ref_point = np.array((ref_distance, ref_demand))
+        min_dist = min(self.data[0])
+        max_dist = max(self.data[0])
+        min_demand = min(self.data[1])
+        max_demand = max(self.data[1])
+        
+        ref_distance = max_dist * 1.1 #reference point is worse than the worst objectives
+        ref_demand = max_demand * 1.1
 
-        self.hypervolume_indicator = 0
+        self.hypervolume_indicator = 0.0
+        prev_dist = ref_distance
 
-        for i, solution_number in enumerate(self.sorted_pareto_front):
+
+        for solution_number in self.sorted_pareto_front:
             dist = self.data[0][solution_number]
             dmnd = self.data[1][solution_number]
 
-            if i==0:
-                width = dist - ref_point[0]
-            else:
-                width = dist - self.data[0][self.sorted_pareto_front[i-1]]
+            width = prev_dist - dist 
 
-            height = ref_point[1] - dmnd
+            height = ref_demand - dmnd
 
             self.hypervolume_indicator += width*height
+            prev_dist = dist
 
         # normalise the hypervolume indicator:
-        maximum_hypervolume = (ref_distance - min(self.data[0])) * (ref_demand - min(self.data[1]))
-        if maximum_hypervolume > 0:
+        maximum_hypervolume = (ref_distance - min_dist) * (ref_demand - min_demand)
+        if maximum_hypervolume <= 0:
+            self.hypervolume_indicator = 0.0
+        else:
             self.hypervolume_indicator /= maximum_hypervolume
 
 

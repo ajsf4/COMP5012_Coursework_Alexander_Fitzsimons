@@ -3,16 +3,17 @@ import numpy as np
 rng = np.random.default_rng()
 
 def findParetoFront(solution_history):
-    pareto_front = []
     distances, demands = extract_objectives(solution_history)
-    for i in range(len(solution_history)):
-        i_is_better_than_these_di = distances[i] < distances
-        i_is_better_than_these_de = demands[i] < demands
-
-        bool_list = np.logical_or(i_is_better_than_these_de, i_is_better_than_these_di)
-        if len(bool_list)-sum(bool_list) <= 1 :
-            pareto_front.append(i)
-
+    num = len(distances)
+    dominated = np.zeros(num, dtype=bool)
+    
+    for i in range(num):
+        # Compare i against all j
+        dominated_by_i = (distances <= distances[i]) & (demands <= demands[i]) 
+        dominated_by_i &= ((distances < distances[i]) | (demands < demands[i]))
+        dominated[i] = np.any(dominated_by_i)
+    
+    pareto_front = np.where(np.bitwise_not(dominated))[0].tolist()
     return pareto_front
 
 def extract_objectives(solution_history):
@@ -26,6 +27,8 @@ def extract_objectives(solution_history):
     return distances, demands
 
 def normalise(value, min_val, max_val):
+    if max_val == min_val:
+        return 0.5
     return (value - min_val) / (max_val - min_val)
 
 def findBestSolutions(solution_indexes, number_of_solutions, solution_history):
@@ -46,12 +49,13 @@ def findBestSolutions(solution_indexes, number_of_solutions, solution_history):
 
     dominated_by = np.array(dominated_by)
 
+
     let_through = []
     threshold = 0
     while len(let_through) < number_of_solutions:
         for c, i in enumerate(dominated_by):
             if i == threshold:
-                let_through.append(solution_indexes[i])
+                let_through.append(solution_indexes[c])
             if len(let_through) == number_of_solutions:
                 break
         threshold += 1
@@ -78,11 +82,16 @@ class MOGA_PTSP:
         # each route consists of a series of indexes referring to the self.points list indicating the movement from one node to the next
         self.population = []
         self.solution_history = []
-        for i in range(self.population_size):
+        for i in range(self.population_size-1):
             solution = [self.generate_random_route() for j in range(self.periods)]
             self.solution_history.append(Solution(solution, self.all_distances, self.starting_demands))
             self.solution_history[-1].evaluate_objectives(self.all_distances)
             self.population.append(i)
+
+        # add in the null solution of empty routes:
+        null_solution = [[self.depot] for i in range(self.periods)]
+        self.solution_history.append(Solution(null_solution, self.all_distances, self.starting_demands))
+        self.population.append(len(self.solution_history) - 1)
 
         self.pareto_front = []
 
@@ -145,7 +154,7 @@ class MOGA_PTSP:
         
         for s, solution_index in enumerate(self.population):
             # determine removal probability by the solution in the population:
-            prob = 0.3
+            prob = s / len(self.population)
             original = self.solution_history[solution_index].solution
             altered_solution = [route.copy() for route in original]
             for r, route in enumerate(original):
@@ -168,7 +177,7 @@ class MOGA_PTSP:
 
         new_populations = []
         for i in range(1, 10):
-            new_populations.append(self.mutate(3))
+            new_populations.append(self.mutate(5))
 
         # combine the new with the old
         for population in new_populations:
@@ -180,11 +189,7 @@ class MOGA_PTSP:
 
         if len(self.population) < self.population_size:
             number_of_solutions = self.population_size - len(self.population)
-            if number_of_solutions % 2 != 0:
-                number_of_solutions+=1
-            self.select_diverse_solutions_from_history("distance", int(number_of_solutions/2))
-            self.select_diverse_solutions_from_history("demand", int(number_of_solutions/2))
-
+            self.select_diverse_solutions_from_history(number_of_solutions)
 
         # eliminate the worst solutions:
         self.population = findBestSolutions(self.population, self.population_size, self.solution_history)
@@ -223,42 +228,83 @@ class MOGA_PTSP:
                 remaining.append(self.population[i])
         self.population = remaining
 
-    def select_diverse_solutions_from_history(self, objective, num_sols):
+    def select_diverse_solutions_from_history(self, num_sols, computation_cutoff=200):
         distances, demands = extract_objectives(self.solution_history)
         
-        if objective == "distance":
-            weighting = 1 / np.array(distances)
-        elif objective == "demand":
-            weighting = 1 / np.array(demands)
-        else:
-            raise ValueError("Invalid objective. Choose distance or demand")
+        effective_cutoff = min(len(self.solution_history), computation_cutoff)
+        distances = distances[-effective_cutoff:]
+        demands = demands[-effective_cutoff:]
 
-        weighting = (weighting / np.sum(weighting)).tolist()
-        
-        to_append = np.random.choice(list(range(len(self.solution_history))), num_sols, replace=False, p=weighting)
+        distances = normalise(np.array(distances), np.min(distances), np.max(distances)).tolist()
+        demands = normalise(np.array(demands), np.min(demands), np.max(demands)).tolist()
+  
+        solution_sparsity = []
+        for dist1, dmnd1 in zip(distances, demands):
+            objective_summed_distance = np.array([0, 0], dtype=np.float64)
+            for dist2, dmnd2 in zip(distances, demands):
+                if not(dist1==dist2 and dmnd1==dmnd2):
+                    objective_summed_distance += np.array([abs(dist1-dist2), abs(dmnd1-dmnd2)])
+            solution_sparsity.append(np.linalg.norm(objective_summed_distance))
+
+
+        weighting = (solution_sparsity / np.sum(solution_sparsity)).tolist()
+
+        offset = max(0, len(self.solution_history) - effective_cutoff) # re-indexing required
+        to_append = np.random.choice(range(effective_cutoff), num_sols, replace=False, p=weighting)
         for i in to_append:
-            self.population.append(i)  
-    
+            self.population.append(i+offset) # use this to ensure that index is consistent with solution history
+
+        
+    def dist_of_route(self, route):
+        summation = 0
+        for i in range(len(route)):
+            summation += self.all_distances[route[i]][route[i-1]]
+        return summation
+
+    def optimise_distance_of_selected_solution(self, selected_solution, dont_update=False):
+        solution = [route.copy() for route in  self.solution_history[selected_solution].solution] 
+
+        for route in solution:
+            if len(route) >= 2:
+                for iteration in range(50):
+
+                    a = np.random.randint(1, len(route))
+                    b = np.random.randint(1, len(route))
+                    if a!=b:
+                        original_dist = self.dist_of_route(route)
+                        route[a], route[b] = route[b], route[a]
+                        new_dist = self.dist_of_route(route)
+
+                        if new_dist > original_dist:
+                            route[a], route[b] = route[b], route[a]
+
+        self.solution_history.append(Solution(solution, self.all_distances, self.starting_demands))
+        #new population is all the new found solution which will all get mutated when there is another generation
+        self.population = [len(self.solution_history)-1 for i in range(self.population_size)]
+
+        if not dont_update:
+            self.pareto_front = findParetoFront(self.solution_history)
+                
 
 # a class which keeps track of each solution and their objective values
 class Solution:
     def __init__(self, solution, distance_array, demands):
         self.solution = [route.copy() for route in solution]      # deep copy routes
-        self.demands  = demands.copy()  
+        self.initial_demands  = demands.copy()  
         self.first_solution = solution.copy()
         self.demands = demands.copy()
         self.distance, self.demand = self.evaluate_objectives(distance_array)
 
         
     def evaluate_objectives(self, all_distances):
-
+        demands = self.initial_demands.copy()
         total_distance = 0
         for route in self.solution:
             for p, point in enumerate(route):
                 prev_point = route[p-1] if p > 0 else route[-1]
                 total_distance += all_distances[prev_point][point]
-                if self.demands[point] > 0:# if there is no demand in a visited node, then there is no reduction in the total demand
-                    self.demands[point] -= 1
+                if demands[point] > 0:# if there is no demand in a visited node, then there is no reduction in the total demand
+                    demands[point] -= 1
 
-        return total_distance, sum(self.demands)
+        return total_distance, sum(demands)
 

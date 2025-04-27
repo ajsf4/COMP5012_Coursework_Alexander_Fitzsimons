@@ -8,6 +8,12 @@ import optimiser as op
 import Render2D as r
 
 
+try:
+    starting_gens = int(input("Enter the number of generations to start with (e.g: 10):"))
+except:
+    print("invalid input. Starting with a single generation")
+    starting_gens = 1
+
 pg.init()
 clock = pg.time.Clock()
 
@@ -28,7 +34,7 @@ with open("data//vrp8.txt", "r") as f:
         initial_connections.append(int(n)-2)
 points = np.array(points)
 
-optimiser = op.MOGA_PTSP(points, demands, 10)
+optimiser = op.MOGA_PTSP(points, demands, 30)
 graph = r.GraphObj(np.array([0,0]), np.array(op.extract_objectives(optimiser.solution_history)), np.array([500,500]), "MOGA", "total distance", "remaining demand")
 
 camera = r.Camera2D((width, height))
@@ -50,6 +56,7 @@ running = True
 speed = 8
 select = False
 selected_solution = 0
+optimise_selected = False
 
 horr = 0
 vert = 0
@@ -66,16 +73,22 @@ for s, mapsOfSolution in enumerate(mapsOfPopulation):
         routeMap.update(optimiser.solution_history[optimiser.population[s]].solution[r])
 
 instruction_font = pg.font.SysFont("Consolas", 20)
-instruction1 = instruction_font.render("Press space to create the next generation", True, (255,0,0))
-instruction2 = instruction_font.render("Use the arrow keys to scroll around the screen", True, (255, 0,0))
-instruction3 = instruction_font.render("Press S to enter selection mode", True, (255,0,0))
-instruction4 = instruction_font.render("Use arrow keys to choose a solution on the pareto front", True, (255,0,0))
-instruction5 = instruction_font.render("Press S to exit selection mode", True, (255,0,0))
+instruction1 = instruction_font.render("Press space to create the next generation", True, (255, 0 ,0))
+instruction2 = instruction_font.render("Use the arrow keys to scroll around the screen", True, (255, 0, 0))
+instruction2_5 = instruction_font.render("Press enter to run pareto distance optimisation", True, (255, 0, 0))
+instruction3 = instruction_font.render("Press S to enter selection mode", True, (255, 0, 0))
+instruction4 = instruction_font.render("Use arrow keys to choose a solution on the pareto front", True, (255, 0, 0))
+instruction4_5 = instruction_font.render("Press enter to optimise the distance of selected solution", True, (255, 0, 0))
+instruction5 = instruction_font.render("Press S to exit selection mode", True, (255,0 , 0))
+instruction6 = instruction_font.render("Generation: 0", True, (255,0,0))
+
+gen = 0
 
 dt = 0
 while running:
     space = False
     select_arrows = 0
+    optimise_selected = False
     for event in pg.event.get():
         if event.type == pg.QUIT:
             running = False
@@ -107,14 +120,7 @@ while running:
                 select = not select
 
             elif event.key == pg.K_RETURN:
-                # debug:
-
-                for a, solution_a in enumerate(optimiser.solution_history):
-                    for b, solution_b in enumerate(optimiser.solution_history):
-                        if solution_a.solution == solution_b.solution:
-                            if a!=b:
-                                if solution_b.demand != solution_a.demand:
-                                    print(solution_b.demand, solution_a.demand)
+                optimise_selected = True
 
 
 
@@ -122,8 +128,10 @@ while running:
     if not select:
         camera.position -= arrow_vector
 
-    if arrow_vector[0] == 0 and arrow_vector[1] == 0 and space and not select:
-        screen.blit(loading_text, (width - loading_text.get_width(), 70))
+    if arrow_vector[0] == 0 and arrow_vector[1] == 0 and (space or starting_gens > 0) and not select:
+        screen.blit(loading_text, (width - loading_text.get_width(), 120))
+        gen +=1
+        instruction6 = instruction_font.render(f"Generation: {gen}", True, (255,0,0))
         pg.display.flip()
         screen.fill((0, 0, 0))
         optimiser.genetic_optimiser()
@@ -137,13 +145,27 @@ while running:
                 routeMap.colour = np.array((255, 0, 0))
                 routeMap.update(optimiser.solution_history[optimiser.population[s]].solution[r])
 
+        if starting_gens > 0:
+            starting_gens += -1
+
     if select and len(graph.pareto_front) > 0:
+
+        if optimise_selected:
+            gen+=1
+            instruction6 = instruction_font.render(f"Generation: {gen}", True, (255,0,0))
+            optimiser.optimise_distance_of_selected_solution(graph.sorted_pareto_front[selected_solution])
+
+            graph_data = np.array(op.extract_objectives(optimiser.solution_history))
+            graph.update(graph_data, optimiser.pareto_front)
+
         if select_arrows != 0:
             selected_solution += select_arrows
         if selected_solution < 0:
             selected_solution = len(graph.pareto_front)-1
         if selected_solution >= len(graph.pareto_front):
             selected_solution = 0
+
+
         
         graph.draw_surface()
         graph.select_solution(selected_solution)
@@ -153,6 +175,16 @@ while running:
             routeMap.update(optimiser.solution_history[graph.sorted_pareto_front[selected_solution]].solution[r])
 
     else:
+        if optimise_selected:
+            screen.blit(loading_text, (width - loading_text.get_width(), 120))
+            pg.display.flip()
+            for i in optimiser.pareto_front:
+                optimiser.optimise_distance_of_selected_solution(i)
+            
+            optimiser.pareto_front = op.findParetoFront(optimiser.solution_history)
+            optimiser.population = optimiser.pareto_front.copy()
+            graph_data = np.array(op.extract_objectives(optimiser.solution_history))
+            graph.update(graph_data, optimiser.pareto_front)
         graph.draw_surface()                
 
     camera.render()
@@ -161,10 +193,13 @@ while running:
     if not select:
         screen.blit(instruction1, (width-instruction1.get_width(), 0))
         screen.blit(instruction2, (width-instruction2.get_width(), 25))
-        screen.blit(instruction3, (width-instruction3.get_width(), 50))
+        screen.blit(instruction2_5, (width-instruction2_5.get_width(), 50))
+        screen.blit(instruction3, (width-instruction3.get_width(), 75))
+        screen.blit(instruction6, (width-instruction6.get_width(), 100))
     else:
         screen.blit(instruction4, (width-instruction4.get_width(), 0))
-        screen.blit(instruction5, (width-instruction5.get_width(), 25))
+        screen.blit(instruction4_5, (width-instruction4_5.get_width(), 25))
+        screen.blit(instruction5, (width-instruction5.get_width(), 50))
 
     pg.display.flip()
     dt = clock.tick(30) / 1000
