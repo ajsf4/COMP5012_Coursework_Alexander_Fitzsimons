@@ -19,26 +19,39 @@ class Camera2D:
 
 
 class MapObj:
-    def __init__(self, position, size, colour, points, connections):
-        self.rescale = 4
-        self.position = position
-        self.colour = colour
+    def __init__(self, position, size, colour, points, connections, title):
+        self.rescale = 2.5
+        self.size = size
+        self.position = np.array(position)
+        self.colour = np.array(colour)
         self.surface = pg.Surface(self.rescale*size)
         self.points = self.rescale * points
+        self.font = pg.font.SysFont("Consolas", 12)
+        self.text = self.font.render(title, True, self.colour)
         
     def update(self, new_connections):
         self.surface.fill((0, 0, 0))
+
+        for point in self.points:
+            pg.draw.circle(self.surface, (self.colour*0.5).astype(int), point, 4)
+
        
         for i, c in enumerate(new_connections):
             pg.draw.aaline(self.surface, self.colour, self.points[new_connections[i-1]], self.points[c], 2)
-            pg.draw.circle(self.surface, self.colour, self.points[c], 5)
+            pg.draw.circle(self.surface, self.colour, self.points[c], 4)
+
+        pg.draw.circle(self.surface, (255,255,255), self.points[0], 2)
+
+        self.surface.blit(self.text, (0, self.size[1]-self.text.get_height()))
 
 
 class GraphObj:
     def __init__(self, position, initial_data, size, title, x_label, y_label):
         self.position = position
         self.data = initial_data
-        self.size = size
+        self.new_data_points = [i for i in range(len(self.data[0]))]
+        self.highlight_population = [i for i in range(len(self.data[0]))]
+        self.size = np.array(size)
         self.surface = pg.Surface(size)
         self.s = 5 # spacing
 
@@ -53,19 +66,39 @@ class GraphObj:
         self.datapoint_colour = (255, 0, 0)
         self.text_colour = (0, 255, 0)
 
-        self.font = pg.font.SysFont("consolas", 10)
+        self.font = pg.font.SysFont("consolas", 14)
         self.t = title
         self.title = self.font.render(title, True, self.text_colour)
         self.x_label = self.font.render(x_label, True, self.text_colour)
         self.y_label = pg.transform.rotate(self.font.render(y_label, True, self.text_colour), 90)
 
         self.pareto_front = []
-        self.current_population = []
+        self.sorted_pareto_front = []
 
-    def update(self, new_data, pareto_front, current_population):
+        self.p1 = np.array([self.s*3, self.s*3])
+        self.p2 = np.array([self.s*3, self.size[1]-self.s*3])
+        self.p3 = np.array([self.size[0]-self.s*3, self.size[1]-self.s*3])
+        self.p4 = np.array([self.size[0]-self.s*3, self.s*3])
+
+        self.graph_width = self.p3[0] - self.p1[0]
+        self.graph_height = self.p3[1] - self.p1[1]
+
+        self.label_surface = pg.Surface((self.size[0]/2.5, self.size[1]/6))
+
+        self.hypervolume_indicator = 0
+
+    def sort_pareto_front(self):
+        pareto_distances = [self.data[0][i] for i in self.pareto_front]
+        sorted_pareto_indices = np.argsort(pareto_distances)
+        self.sorted_pareto_front = [self.pareto_front[i] for i in sorted_pareto_indices]
+
+    def update(self, new_data, pareto_front):
         self.pareto_front = pareto_front.copy()
-        self.current_population = current_population.copy()
+        number_of_new_points = len(new_data[0]) - len(self.data[0])
+        self.new_data_points = [i+len(self.data[0]) for i in range(number_of_new_points)]
         self.data = new_data.copy()
+        self.sort_pareto_front()
+
         self.minX = min(self.data[0])
         self.maxX = max(self.data[0])
         self.minY = min(self.data[1])
@@ -73,18 +106,24 @@ class GraphObj:
         self.rangeX = self.maxX - self.minX
         self.rangeY = self.maxY - self.minY
 
+        self.calculate_hypervolume()
+
+        label_heading = self.font.render("Metrics:", True, (0,200,0))
+        label_H_Indicator1 = self.font.render("Normalised Hypervolume ", True, (0,200,0))
+        label_H_Indicator2 = self.font.render(f"Indicator = {self.hypervolume_indicator:.4f}", True, (0,200,0))
+
+        self.label_surface.fill((10, 20, 10))
+        pg.draw.rect(self.label_surface, (0, 200, 0), (0, 0, self.label_surface.get_width(), self.label_surface.get_height()), width=2)
+        self.label_surface.blit(label_heading, (5,5))
+        self.label_surface.blit(label_H_Indicator1, (5,30))
+        self.label_surface.blit(label_H_Indicator2, (5,45))
+
     def draw_surface(self):
         self.surface.fill((0,0,0))
-        
-        p1 = np.array([self.s*3, self.s*3])
-        p2 = np.array([self.s*3, self.size[1]-self.s*3])
-        p3 = np.array([self.size[0]-self.s*3, self.size[1]-self.s*3])
+       
 
-        graph_width = p3[0] - p1[0]
-        graph_height = p3[1] - p1[1]
-
-        pg.draw.line(self.surface, self.axes_colour, p1, p2)
-        pg.draw.line(self.surface, self.axes_colour, p2, p3)
+        pg.draw.line(self.surface, self.axes_colour, self.p1, self.p2)
+        pg.draw.line(self.surface, self.axes_colour, self.p2, self.p3)
 
         self.surface.blit(self.title, (self.size[0]//2 - self.title.get_width()//2, 0))
         self.surface.blit(self.x_label, (self.size[0]//2 - self.x_label.get_width()//2, self.size[1]-self.x_label.get_height()))
@@ -103,12 +142,79 @@ class GraphObj:
 
         # draw the data points
         if len(self.data[0]) >= 2 and self.rangeX != 0 and self.rangeY != 0:
+
             for i, x, y in zip(list(range(len(self.data[0]))), self.data[0], self.data[1]):
-                plot_x = p2[0] + (x-self.minX) * graph_width / self.rangeX
-                plot_y = p2[1] - (y-self.minY) * graph_height / self.rangeY
-                if i in self.pareto_front:
-                    pg.draw.circle(self.surface, (0, 0, 255), (int(plot_x), int(plot_y)), 2)
-                elif i in self.current_population:
-                    pg.draw.circle(self.surface, (255, 255, 0), (int(plot_x), int(plot_y)), 2)
+                plot_x, plot_y = self.plot_xy(x,y)
+                if i in self.new_data_points:
+                    pg.draw.circle(self.surface, (255, 255, 0), (int(plot_x), int(plot_y)), 3)
                 else:
-                    pg.draw.circle(self.surface, self.datapoint_colour, (int(plot_x), int(plot_y)), 2)
+                    pg.draw.circle(self.surface, self.datapoint_colour, (int(plot_x), int(plot_y)), 3)
+            
+            for i, x, y in zip(list(range(len(self.data[0]))), self.data[0], self.data[1]):                
+                if i in self.highlight_population:
+                    plot_x, plot_y = self.plot_xy(x,y)
+                    pg.draw.circle(self.surface, (0, 200, 250), (int(plot_x), int(plot_y)), 6)
+
+            for i, x, y in zip(list(range(len(self.data[0]))), self.data[0], self.data[1]):
+                if i in self.pareto_front:
+                    plot_x, plot_y = self.plot_xy(x,y)
+                    pg.draw.circle(self.surface, (0, 0, 255), (int(plot_x), int(plot_y)), 3)
+
+        self.surface.blit(self.label_surface, (self.size[0] - self.label_surface.get_width(), 0))
+
+    def select_solution(self, selected_solution):
+        x = self.data[0][self.sorted_pareto_front[selected_solution]]
+        y = self.data[1][self.sorted_pareto_front[selected_solution]]
+
+        plot_x, plot_y = self.plot_xy(x,y)
+        pg.draw.line(self.surface, (0, 200, 0), (plot_x, plot_y), (self.size[0]-self.label_surface.get_width(), self.label_surface.get_height()), 2)
+
+        
+        label_heading = self.font.render("Selected Solution:", True, (0, 200, 0))
+        label_demand = self.font.render(f"Demand = {y:.2f}", True, (0, 200, 0))
+        label_distance = self.font.render(f"Distance = {x:.2f}", True, (0, 200, 0))
+
+        self.label_surface.fill((10, 20, 10))
+        pg.draw.rect(self.label_surface, (0, 200, 0), (0, 0, self.label_surface.get_width(), self.label_surface.get_height()), width=2)
+        self.label_surface.blit(label_heading, (5,5))
+        self.label_surface.blit(label_demand, (5,30))
+        self.label_surface.blit(label_distance, (5,55))    
+
+    def plot_xy(self, x, y):
+        plot_x = self.p2[0] + (x-self.minX) * self.graph_width / self.rangeX
+        plot_y = self.p2[1] - (y-self.minY) * self.graph_height / self.rangeY
+
+        return plot_x, plot_y
+
+    def calculate_hypervolume(self):
+        ref_distance = max(self.data[0])
+        ref_demand = max(self.data[1])
+        ref_point = np.array((ref_distance, ref_demand))
+
+        self.hypervolume_indicator = 0
+
+        for i, solution_number in enumerate(self.sorted_pareto_front):
+            dist = self.data[0][solution_number]
+            dmnd = self.data[1][solution_number]
+
+            if i==0:
+                width = dist - ref_point[0]
+            else:
+                width = dist - self.data[0][self.sorted_pareto_front[i-1]]
+
+            height = ref_point[1] - dmnd
+
+            self.hypervolume_indicator += width*height
+
+        # normalise the hypervolume indicator:
+        maximum_hypervolume = (ref_distance - min(self.data[0])) * (ref_demand - min(self.data[1]))
+        if maximum_hypervolume > 0:
+            self.hypervolume_indicator /= maximum_hypervolume
+
+
+
+
+
+
+
+
