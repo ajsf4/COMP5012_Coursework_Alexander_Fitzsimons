@@ -1,8 +1,6 @@
-from matplotlib.cbook import safe_first_element
 import numpy as np
 import pygame as pg
 import sys
-import random
 
 import optimiser as op
 import Render2D as r
@@ -19,7 +17,7 @@ clock = pg.time.Clock()
 
 # Screen
 width, height = 1200, 700
-screen = pg.display.set_mode((width, height))
+screen = pg.display.set_mode((width, height), pg.RESIZABLE)
 pg.display.set_caption("Travelling Salesman Problem")
 
 points = []
@@ -93,7 +91,12 @@ while running:
         if event.type == pg.QUIT:
             running = False
 
-        if event.type == pg.KEYDOWN:
+        elif event.type == pg.VIDEORESIZE:
+            width = screen.get_width()
+            height = screen.get_height()
+            camera.surface = pg.Surface((width, height))
+
+        elif event.type == pg.KEYDOWN:
             if event.key == pg.K_UP:
                 vert = 1
             elif event.key == pg.K_DOWN:
@@ -103,7 +106,7 @@ while running:
             elif event.key == pg.K_RIGHT:
                 horr = -1
 
-        if event.type == pg.KEYUP:
+        elif event.type == pg.KEYUP:
             if event.key == pg.K_UP:
                 vert = 0
             elif event.key == pg.K_DOWN:
