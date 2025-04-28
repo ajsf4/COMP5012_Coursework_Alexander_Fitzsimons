@@ -11,7 +11,7 @@
     <OutputPath>.</OutputPath>
     <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <InterpreterId />
+    <InterpreterId>Global|VisualStudio|COMP5012</InterpreterId>
     <SuppressConfigureTestFrameworkPrompt>true</SuppressConfigureTestFrameworkPrompt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
@@ -20,12 +20,9 @@
     <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Render2D.py" />
     <Compile Include="optimiser.py" />
-    <Compile Include="shapes.py" />
-    <Compile Include="controller.py" />
-    <Compile Include="shader.py" />
     <Compile Include="Travelling_Salesman.py" />
-    <Compile Include="ui.py" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="data\vrp10.txt" />
@@ -35,6 +32,9 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="data" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|VisualStudio|COMP5012" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
 </Project>

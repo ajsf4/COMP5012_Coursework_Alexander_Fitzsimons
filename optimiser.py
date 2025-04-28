@@ -1,294 +1,310 @@
-from hmac import new
 import numpy as np
-from numpy.random import pareto
 
-# obsolete:
-class SwapperOptimiser:
-    def __init__(self, points, route):
-        self.points = points
-        self.route = route
-        self.route_history = []
-        self.best_route = self.route
-        self.best_distance = self.calculate_distance()
+rng = np.random.default_rng()
 
-    def calculate_distance(self):
-        distance = 0
-        for i in range(len(self.route)):
-            distance += np.linalg.norm(self.points[self.route[i]] - self.points[self.route[i-1]])
-        return distance
-
-    def swap(self, i, j):
-        self.route[i], self.route[j] = self.route[j], self.route[i]
-
-    def optimise(self):
-        self.route_history.append(self.route.copy())
-        route_tested = True
-        i=0
-        j=0
-        while route_tested:
-            i = np.random.randint(0, len(self.route))
-            j = np.random.randint(0, len(self.route))
-            
-            self.swap(i, j)
-            if self.route not in self.route_history:
-                route_tested = False
-            else:
-                self.swap(i, j)
-        distance = self.calculate_distance()
-        if distance < self.best_distance:
-            self.best_distance = distance
-            self.best_route = self.route
-        else:
-            self.swap(i, j)
-       
+def findParetoFront(solution_history):
+    distances, demands = extract_objectives(solution_history)
+    num = len(distances)
+    dominated = np.zeros(num, dtype=bool)
     
-# an ant colony optimiser that only uses lowest distance travelled as an objective
-class FerromoneOptimiser:
-    def __init__(self, points, colony_size):
+    for i in range(num):
+        # Compare i against all j
+        dominated_by_i = (distances <= distances[i]) & (demands <= demands[i]) 
+        dominated_by_i &= ((distances < distances[i]) | (demands < demands[i]))
+        dominated[i] = np.any(dominated_by_i)
+    
+    pareto_front = np.where(np.bitwise_not(dominated))[0].tolist()
+    return pareto_front
+
+def extract_objectives(solution_history):
+    distances = []
+    demands = []
+    for solution in solution_history:
+        distances.append(solution.distance+0)
+        demands.append(solution.demand+0)
+    distances = np.array(distances)
+    demands = np.array(demands)
+    return distances, demands
+
+def normalise(value, min_val, max_val):
+    if max_val == min_val:
+        return 0.5
+    return (value - min_val) / (max_val - min_val)
+
+def findBestSolutions(solution_indexes, number_of_solutions, solution_history):
+    distances, demands = extract_objectives(solution_history)
+    distances = [distances[i] for i in solution_indexes]
+    demands = [demands[i] for i in solution_indexes]
+
+    if len(solution_indexes) < number_of_solutions:
+        number_of_solutions = len(solution_indexes)
+
+    dominated_by = []
+    for i in range(len(solution_indexes)):
+        i_is_better_than_these_di = distances[i] < distances
+        i_is_better_than_these_de = demands[i] < demands
+
+        #indicates for each solution in the list, how many other solutions dominate it
+        dominated_by.append(sum(np.logical_not(np.logical_or(i_is_better_than_these_de, i_is_better_than_these_di))))
+
+    dominated_by = np.array(dominated_by)
+
+
+    let_through = []
+    threshold = 0
+    while len(let_through) < number_of_solutions:
+        for c, i in enumerate(dominated_by):
+            if i == threshold:
+                let_through.append(solution_indexes[c])
+            if len(let_through) == number_of_solutions:
+                break
+        threshold += 1
+
+    return let_through
+
+
+class MOGA_PTSP:
+    def __init__(self, points, demands, population):
         self.points = points
-        self.colony_size = colony_size
-        self.global_ferromones = np.ones((len(self.points), len(self.points)))
-        self.ant_ferromones = np.zeros((self.colony_size, len(self.points), len(self.points)))
-        self.new_generation()
-        self.dist_pow = 2
-        self.ferr_pow = 2
-        self.best_routes = []
-        self.best_scores = []
-        self.iterations = 0
+        self.starting_demands = demands
+        self.population_size = population
+        self.depot = 0 #the index of the starting point
+        self.all_distances = [[ np.linalg.norm(point_a - point_b) for point_b in self.points ] for point_a in self.points ]
 
-
-    def new_generation(self):
+        # number of periods is equal to the maximum demand as this allows every node to be visited at least that many times within the number of period
+        # in this variation a node doesn't have to be visited in every period, but each node has a demand that is reduced by 1 every time it is visited in a period
+        # this continues until the end of the number of periods and the remaining demand is summed up
+        # the sum total demand at the end should be minimized as well as the total distance travelled       
+        self.periods = max(demands)
         
-        self.ant_current_positions = []
-        self.ant_distances = [0 for i in range(self.colony_size)]
-        self.ant_available_positions = [[j for j in range(len(self.points))] for i in range(self.colony_size)]
-        self.select_starting_positions()
-        self.ant_routes = [[self.ant_current_positions[i]] for i in range(self.colony_size)]
+        # population consists of a series of solutions which will be mutated each generation to try and optimise the objectives
+        # each solution has n routes where n is the number of periods
+        # each route consists of a series of indexes referring to the self.points list indicating the movement from one node to the next
+        self.population = []
+        self.solution_history = []
+        for i in range(self.population_size-1):
+            solution = [self.generate_random_route() for j in range(self.periods)]
+            self.solution_history.append(Solution(solution, self.all_distances, self.starting_demands))
+            self.solution_history[-1].evaluate_objectives(self.all_distances)
+            self.population.append(i)
 
-    def select_starting_positions(self):
-        for ant in range(self.colony_size):
-            point_position = np.random.randint(0, len(self.points))
-            self.ant_current_positions.append(point_position)
+        # add in the null solution of empty routes:
+        null_solution = [[self.depot] for i in range(self.periods)]
+        self.solution_history.append(Solution(null_solution, self.all_distances, self.starting_demands))
+        self.population.append(len(self.solution_history) - 1)
 
-    def calculate_distance(self, point1, point2):
-        distance = np.linalg.norm(point1 - point2)
-        return distance
+        self.pareto_front = []
 
-    def select_new_positions(self):
-        new_positions = []
-        for ant, ant_position in enumerate(self.ant_current_positions):
-            self.ant_available_positions[ant].remove(ant_position)
-            weights = []
-            lengths = []
-            if len(self.ant_available_positions[ant]) > 0:
-                for i, pos in enumerate(self.ant_available_positions[ant]):
-                    dist = self.calculate_distance(self.points[pos], self.points[ant_position])
-                    ferromone = self.global_ferromones[ant_position][pos]
-                    weight = ((1/dist) ** self.dist_pow) * (ferromone ** self.ferr_pow)
-                    weights.append(weight)
-                    lengths.append(dist)
-                # normalise to a probability ditribution
-                total = sum(weights)
-                p = np.array(weights)/total
-                # ant makes his decision
-                selected_point = np.random.choice([i for i in range(len(p))], 1, p=p)[0]
-                new_pos = self.ant_available_positions[ant][selected_point]
+        self.generations = 0
+
+    def generate_random_route(self):
+        route_length = np.random.randint(1, len(self.points))
+
+        default_route = np.arange(1, len(self.points))
+        np.random.shuffle(default_route)
+
+        random_route = np.append(self.depot, default_route[0:route_length]).tolist()
+        # when evaluating each route, the distance between the last and first points is accounted for
+        # this means we only need to state the depot at the start of the route and not the end#
+
+        return random_route
+    
+    def remove_distance_heuristic(self, route):
+        route_distance_scores = []
+        for i in range(1, len(route)):
+            p1 = route[i-1]
+            p2 = route[i]
+            if i < len(route)-1:
+                p3 = route[i+1]
             else:
-                selected_point = 0
-                new_pos = self.ant_routes[ant][selected_point]
-                lengths = [self.calculate_distance(self.points[new_pos], self.points[ant_position])]
-            new_positions.append(new_pos)
-            self.ant_distances[ant] += lengths[selected_point]
-            self.ant_ferromones[ant][ant_position][new_pos] = 1
-            self.ant_routes[ant].append(new_pos)
-        self.ant_current_positions = new_positions.copy()
+                p3 = route[0]
 
-    def traverse_network(self):
+            # a point has two distances associated with it corresponding to the connections to the points before and after it
+            route_distance_scores.append(self.all_distances[p1][p2] + self.all_distances[p2][p3])
+        # get weights:
+        weights = np.array(route_distance_scores)
+        normalised = (weights / np.sum(weights)).tolist()
+        return np.random.choice(route[1:], 1, normalised)[0] # p distribution biased towards high distances as we want to remove those
+
+    def add_distance_heuristic(self, route):
+        not_in_route = []
         for i in range(len(self.points)):
-            self.select_new_positions()
-        ant_route_scores = 1 / np.array(self.ant_distances)
-        normalised_ant_route_scores = ant_route_scores / np.sum(ant_route_scores)
-        self.best_scores.append(max(ant_route_scores))
-        self.best_routes.append(self.ant_routes[ant_route_scores.tolist().index(max(ant_route_scores))])
-        self.new_generation()
-        for ant, score in enumerate(normalised_ant_route_scores):
-            self.global_ferromones += score * self.ant_ferromones[ant]
-        self.ant_ferromones = np.zeros((self.colony_size, len(self.points), len(self.points)))
-        self.global_ferromones /= np.amax(self.global_ferromones)
-        self.iterations += 1
+            if i not in route:
+                not_in_route.append(i)
         
+        new_points_and_positions = [(new_point, position) for new_point in not_in_route for position in range(len(route))]        
+        indexes = [i for i in range(len(new_points_and_positions))]
+        scores = []
+        for i in range(len(route)):
+            p1 = route[i-1]
+            p3 = route[i]
+            for p2 in not_in_route:
+                scores.append(1/(self.all_distances[p1][p2] + self.all_distances[p2][p3]))
+                # score is 1/distance as lower distances are preferred
+        weights = np.array(scores)
+        normalised = (weights / np.sum(weights)).tolist()
+        new_point, position = new_points_and_positions[np.random.choice(indexes, 1, normalised)[0]]
+        if position == 0:
+            position = len(route)
 
-# a simple optimiser that also accounts for the demand of each city 
-class MultiObjectiveOptimiser:
-    def __init__(self, points, demands):
-        self.points = np.array(points)
-        self.demands = np.array(demands)
-        self.route = np.arange(len(points))
-        np.random.shuffle(self.route)
-        self.route_history = [self.route.copy()]
-        self.base = 1.1
-        cSat, dist = self.CalculateObjectives()
-        self.distance_history = [dist]
-        self.customer_satisfaction_history = [cSat]
-
-        # exploration variables
-        self.explore_threshold = 5 #int(len(points) / 4)
-        self.attempts_since_change = 0
-        self.swaps_per_iteration = 1
-
-        # variables for mutate paretos + explore
-        self.tested = []
-        self.number_of_swaps = 1
+        return new_point, position
+                
+    def mutate(self, mutation_rate):
+        new_population = []
         
-        #pareto front variables
-        self.pareto_front = []
+        for s, solution_index in enumerate(self.population):
+            # determine removal probability by the solution in the population:
+            prob = s / len(self.population)
+            original = self.solution_history[solution_index].solution
+            altered_solution = [route.copy() for route in original]
+            for r, route in enumerate(original):
+                for _ in range(mutation_rate):
+                    if np.random.rand() < prob and len(altered_solution[r]) > 1:
+                        # remove points with bad distance scores:
+                        point_to_mutate = self.remove_distance_heuristic(altered_solution[r])
+                        altered_solution[r].remove(point_to_mutate)
+                    elif len(route) < len(self.points): # 70% chance to add
+                        new_point, position = self.add_distance_heuristic(route)
+                        altered_solution[r].insert(position, new_point) # also assume depot is zero
 
-    def CalculateObjectives(self):
-        total_customer_satisfaction = 0
-        total_distance_of_route = 0
-        time_taken = 0
+            self.solution_history.append(Solution(altered_solution, self.all_distances, self.starting_demands))
+            self.solution_history[-1].evaluate_objectives(self.all_distances)
+            new_population.append(len(self.solution_history)-1)
+        return new_population 
 
-        time_per_unit_of_demand = 50
-        time_per_unit_of_distance = 10
+    def genetic_optimiser(self):
+        self.generations+=1
 
-        prev_i = self.route[-1]
-        for i in self.route:
-            #finding the route distance:
-            d = np.linalg.norm(self.points[i] - self.points[prev_i])
-            total_distance_of_route += d
-            time_taken += d*time_per_unit_of_distance
+        new_populations = []
+        for i in range(1, 10):
+            new_populations.append(self.mutate(5))
 
-            #finding the customer satisfaction:
-            #formula determined by requiring that zero demand has maximum satisfaction no matter the time taken ...
-            #  ... and that zero time taken has maximum satisfaction no matter the demand ...
-            #  ... and that for non zero demand and non zero time taken, satisfaction decreases exponentially according to a given time taken ...
-            #  ... and satisfaction decreases exponentially as time taken increases according to a given demand.
-            exponent = (- time_taken * self.demands[i])/10000
-            cs = np.pow(self.base, exponent)
-            total_customer_satisfaction += cs
-            time_taken += time_per_unit_of_demand*self.demands[i]
+        # combine the new with the old
+        for population in new_populations:
+            for solution_index in population:
+                self.population.append(solution_index)
 
-            prev_i = i.copy()
-        return total_customer_satisfaction, total_distance_of_route
+        # apply clusterer to reduce solutions which are too crowded:
+        self.clusterer(0.1)
 
-    def RandomWalkOptimise(self):
-        while any(np.array_equal(self.route, route) for route in self.route_history):
-            np.random.shuffle(self.route)
-        self.route_history.append(self.route.copy())
-        custSat, routeDist = self.CalculateObjectives()
-        self.distance_history.append(routeDist)
-        self.customer_satisfaction_history.append(custSat)
+        if len(self.population) < self.population_size:
+            number_of_solutions = self.population_size - len(self.population)
+            self.select_diverse_solutions_from_history(number_of_solutions)
 
-    def DominatesSomething(self, d, c):
-        if c > max(self.customer_satisfaction_history) or d < min(self.distance_history):
-            return True
-        else:
-            return False
+        # eliminate the worst solutions:
+        self.population = findBestSolutions(self.population, self.population_size, self.solution_history)
+        # calculate pareto front from the entire history
+        self.pareto_front = findParetoFront(self.solution_history)
 
-    def HillClimbSwapperOptimise(self):
-        i=0
-        j=0
-        while any(np.array_equal(self.route, route) for route in self.route_history):
-            i = np.random.randint(0, len(self.route))
-            j = np.random.randint(0, len(self.route))
-            self.route[i], self.route[j] = self.route[j], self.route[i]
+    def clusterer(self, min_dist_threshold):
+        #removes points from the current population that are too close together to increase diversity when eliminating bad points
+        distances, demands = extract_objectives(self.solution_history)
+        distances = [distances[i] for i in self.population]
+        demands = [demands[i] for i in self.population]
 
-        custSat, routeDist  = self.CalculateObjectives()
+        min_dist, max_dist = np.min(distances), np.max(distances)
+        min_demand, max_demand = np.min(demands), np.max(demands)
+        remaining = []
+        selected_indices = []
 
-        # condition to revert back if we got worse
-        if self.DominatesSomething(routeDist, custSat):
-            pass
-        else:
-            self.route[i], self.route[j] = self.route[j], self.route[i]
+        for i in range(len(self.population)):
+            is_too_close = False
+            # first in population is always added to remaining as selected indices is empty
+            # subsequent solutions are compared against any that are allowed through to see if they are too close
+            # if they are too close to anything then they do not get added
+            for j in selected_indices:
+                #normalisation of objectives to ensure balanced comparison
+                pos1 = np.array([normalise(distances[i], min_dist, max_dist),
+                                 normalise(demands[i], min_demand, max_demand)])
+                pos2 = np.array([normalise(distances[j], min_dist, max_dist),
+                                 normalise(demands[j], min_demand, max_demand)])
 
-        self.route_history.append(self.route.copy())
-        self.distance_history.append(routeDist)
-        self.customer_satisfaction_history.append(custSat)
+                objective_distance = np.linalg.norm(pos1 - pos2)
+                if objective_distance < min_dist_threshold:
+                    is_too_close = True
+                    break
+            if not is_too_close:
+                selected_indices.append(i)
+                remaining.append(self.population[i])
+        self.population = remaining
 
-        self.FindParetoFront()
+    def select_diverse_solutions_from_history(self, num_sols, computation_cutoff=200):
+        distances, demands = extract_objectives(self.solution_history)
+        
+        effective_cutoff = min(len(self.solution_history), computation_cutoff)
+        distances = distances[-effective_cutoff:]
+        demands = demands[-effective_cutoff:]
 
-    def HillClimbSwapperWithExplorationOptimise(self):
-        old_route = self.route.copy()
-        while any(np.array_equal(self.route, route) for route in self.route_history):
-            for n in range(self.swaps_per_iteration):
-                i = np.random.randint(0, len(self.route))
-                j = np.random.randint(0, len(self.route))
-                self.route[i], self.route[j] = self.route[j], self.route[i]
-
-        route_diff = np.array(old_route) - np.array(self.route)
-        custSat, routeDist = self.CalculateObjectives()
-
-        # condition to revert back if we got worse
-        if self.DominatesSomething(routeDist, custSat):
-            self.attempts_since_change = 0
-            self.swaps_per_iteration = 1
-
-        else:
-            self.attempts_since_change += 1
-            self.route = old_route
-            if self.attempts_since_change > self.explore_threshold:
-                self.attempts_since_change = 0
-                self.swaps_per_iteration += 1
-
-
-        self.route_history.append(self.route.copy())
-        self.distance_history.append(routeDist.copy())
-        self.customer_satisfaction_history.append(custSat.copy())
-
-        self.FindParetoFront()
-
-    def MutateOnlyParetoFrontOptimise(self):
-        self.route = self.route_history[np.random.choice(self.pareto_front)]
-        original = self.route.copy()
-        random_point = np.random.randint(0, len(self.route))
-        for route_index, point_index in enumerate(self.route):
-            self.route[random_point], self.route[route_index] = self.route[route_index], self.route[random_point]
-            if not any(np.array_equal(self.route, route) for route in self.route_history):
-                customer_satisfaction, total_distance = self.CalculateObjectives()
-                self.route_history.append(self.route.copy())
-                self.customer_satisfaction_history.append(customer_satisfaction)
-                self.distance_history.append(total_distance)
-            self.route = original.copy()
-
-        self.FindParetoFront()
+        distances = normalise(np.array(distances), np.min(distances), np.max(distances)).tolist()
+        demands = normalise(np.array(demands), np.min(demands), np.max(demands)).tolist()
+  
+        solution_sparsity = []
+        for dist1, dmnd1 in zip(distances, demands):
+            objective_summed_distance = np.array([0, 0], dtype=np.float64)
+            for dist2, dmnd2 in zip(distances, demands):
+                if not(dist1==dist2 and dmnd1==dmnd2):
+                    objective_summed_distance += np.array([abs(dist1-dist2), abs(dmnd1-dmnd2)])
+            solution_sparsity.append(np.linalg.norm(objective_summed_distance))
 
 
+        weighting = (solution_sparsity / np.sum(solution_sparsity)).tolist()
 
-    def MutateParetoAndExploreOptimise(self):
-        test_route = np.random.choice(self.pareto_front)
-        available_test_routes = list(set(self.pareto_front) - set(self.tested)) # gets the intesection of routes that were mutated and tested with the current pareto front
-        print(available_test_routes)
-        if len(available_test_routes) > 0: # if there are available routes to test, test them
-            test_route = np.random.choice(available_test_routes)
-        else: # if there are no available routes to test, then reset the tested list and explore each route more deeply by having more starting points
-            test_route = np.random.choice(self.pareto_front)
-            self.tested = []
-            self.number_of_swaps += 1
-        self.tested.append(test_route)
-
-        original = self.route.copy()
-
-        random_points = [np.random.randint(0, len(self.route)) for i in range(self.number_of_swaps)]
-        for route_index, point_index in enumerate(self.route):
-            for swap in range(self.number_of_swaps):
-                additional_point = np.random.randint(0, len(self.route))
-                for random_point in random_points:
-                    self.route[random_point], self.route[route_index] = self.route[route_index], self.route[random_point]
-            if not any(np.array_equal(self.route, route) for route in self.route_history):
-                customer_satisfaction, total_distance = self.CalculateObjectives()
-                self.route_history.append(self.route.copy())
-                self.customer_satisfaction_history.append(customer_satisfaction)
-                self.distance_history.append(total_distance)
-            self.route = original.copy()
-
-        self.FindParetoFront()
+        offset = max(0, len(self.solution_history) - effective_cutoff) # re-indexing required
+        to_append = np.random.choice(range(effective_cutoff), num_sols, replace=False, p=weighting)
+        for i in to_append:
+            self.population.append(i+offset) # use this to ensure that index is consistent with solution history
 
         
-    def FindParetoFront(self):
-        self.pareto_front = []
-        for solution in range(len(self.route_history)):
-            betterDistanceThanThese = self.distance_history[solution] <= self.distance_history
-            betterCustomerSatisfactionThanThese = self.customer_satisfaction_history[solution] >= self.customer_satisfaction_history
+    def dist_of_route(self, route):
+        summation = 0
+        for i in range(len(route)):
+            summation += self.all_distances[route[i]][route[i-1]]
+        return summation
 
-            if (all(np.logical_or(betterCustomerSatisfactionThanThese, betterDistanceThanThese))):
-                self.pareto_front.append(solution)
+    def optimise_distance_of_selected_solution(self, selected_solution, dont_update=False):
+        solution = [route.copy() for route in  self.solution_history[selected_solution].solution] 
+
+        for route in solution:
+            if len(route) >= 2:
+                for iteration in range(50):
+
+                    a = np.random.randint(1, len(route))
+                    b = np.random.randint(1, len(route))
+                    if a!=b:
+                        original_dist = self.dist_of_route(route)
+                        route[a], route[b] = route[b], route[a]
+                        new_dist = self.dist_of_route(route)
+
+                        if new_dist > original_dist:
+                            route[a], route[b] = route[b], route[a]
+
+        self.solution_history.append(Solution(solution, self.all_distances, self.starting_demands))
+        #new population is all the new found solution which will all get mutated when there is another generation
+        self.population = [len(self.solution_history)-1 for i in range(self.population_size)]
+
+        if not dont_update:
+            self.pareto_front = findParetoFront(self.solution_history)
+                
+
+# a class which keeps track of each solution and their objective values
+class Solution:
+    def __init__(self, solution, distance_array, demands):
+        self.solution = [route.copy() for route in solution]      # deep copy routes
+        self.initial_demands  = demands.copy()  
+        self.first_solution = solution.copy()
+        self.demands = demands.copy()
+        self.distance, self.demand = self.evaluate_objectives(distance_array)
+
+        
+    def evaluate_objectives(self, all_distances):
+        demands = self.initial_demands.copy()
+        total_distance = 0
+        for route in self.solution:
+            for p, point in enumerate(route):
+                prev_point = route[p-1] if p > 0 else route[-1]
+                total_distance += all_distances[prev_point][point]
+                if demands[point] > 0:# if there is no demand in a visited node, then there is no reduction in the total demand
+                    demands[point] -= 1
+
+        return total_distance, sum(demands)
+

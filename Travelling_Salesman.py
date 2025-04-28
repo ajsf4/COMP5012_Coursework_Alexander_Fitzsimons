@@ -1,191 +1,211 @@
-from attr import s
 import numpy as np
 import pygame as pg
 import sys
-import random
 
-import shader as sh
-import controller as ct
-import shapes as sp
 import optimiser as op
-import ui
+import Render2D as r
+
+
+try:
+    starting_gens = int(input("Enter the number of generations to start with (e.g: 10):"))
+except:
+    print("invalid input. Starting with a single generation")
+    starting_gens = 1
 
 pg.init()
 clock = pg.time.Clock()
 
 # Screen
 width, height = 1200, 700
-screen = pg.display.set_mode((width, height))
+screen = pg.display.set_mode((width, height), pg.RESIZABLE)
 pg.display.set_caption("Travelling Salesman Problem")
-
-# Shader
-shader = sh.Shader(width, height)
-
-
 
 points = []
 demands = []
+initial_connections = []
 with open("data//vrp8.txt", "r") as f:
     lines = f.readlines()
     for i, line in enumerate(lines):
         n, x, y, d = line.split()
-        points.append(np.array([float(x), float(y), 0]))
+        points.append(np.array([float(x), float(y)]))
         demands.append(int(d))
+        initial_connections.append(int(n)-2)
+points = np.array(points)
 
+optimiser = op.MOGA_PTSP(points, demands, 30)
+graph = r.GraphObj(np.array([0,0]), np.array(op.extract_objectives(optimiser.solution_history)), np.array([500,500]), "MOGA", "total distance", "remaining demand")
 
-optimiser_A = op.MultiObjectiveOptimiser(points, demands)
-current_route_A = sp.Path(points, optimiser_A.route)
-shader.scene.add_objects(current_route_A)
-run_optimiser_A = False
+camera = r.Camera2D((width, height))
+camera.add_to_scene(graph)
 
-optimiser_B = op.MultiObjectiveOptimiser(points, demands)
-shifted_points = (np.array(points)+np.array([0, -60, 0])).tolist()
-current_route_B = sp.Path(shifted_points, optimiser_B.route, default_colour=(255,0,255))
-shader.scene.add_objects(current_route_B)
-run_optimiser_B = False
+loading_font = pg.font.SysFont("Consolas", 40)
+loading_text = loading_font.render("Loading next generation...", True, (255, 0, 0))
 
-shifted_points = (np.array(points)+np.array([60, 0, 0])).tolist()
-optimiser_C = op.MultiObjectiveOptimiser(points, demands)
-current_route_C = sp.Path(shifted_points, optimiser_C.route, default_colour=(255,255,0))
-shader.scene.add_objects(current_route_C)
-run_optimiser_C = False
-# initial solutions needed to produce a pareto front that the new optimiser can use
-optimiser_C.HillClimbSwapperOptimise()
-current_route_C.update_route(optimiser_C.route)
+mapsOfPopulation = []
+for y, solution_index in enumerate(optimiser.population):
+    mapsOfSolution = []
+    for x, route in enumerate(optimiser.solution_history[solution_index].solution):
+        mapsOfSolution.append(r.MapObj(np.array((x*200, y*200 + 500)), np.array((200, 200)), (255, 0, 0), points, route, f"solution:{y}, period:{x}"))
+        camera.add_to_scene(mapsOfSolution[-1])
+    mapsOfPopulation.append(mapsOfSolution.copy())
 
-shifted_points = (np.array(points)+np.array([60, -60, 0])).tolist()
-optimiser_D = op.MultiObjectiveOptimiser(points, demands)
-current_route_D = sp.Path(shifted_points, optimiser_D.route, default_colour=(255,0,0))
-shader.scene.add_objects(current_route_D)
-run_optimiser_D = False
-# initial solutions needed to produce a pareto front that the new optimiser can use
-optimiser_D.HillClimbSwapperOptimise()
-current_route_D.update_route(optimiser_D.route)
-
-# User Interface
-graph_A = ui.Graph((150,150), "scatter")
-graph_B = ui.Graph((150,150), "scatter")
-graph_C = ui.Graph((150,150), "scatter")
-graph_D = ui.Graph((150,150), "scatter")
-
-
-
-graph_data_A = [[],[]]
-graph_data_B = [[],[]]
-graph_data_C = [[],[]]
-graph_data_D = [[],[]]
-
-# testing the efficeincy of an optimiser:
-time_allowed_per_optimiser = 60
-timer = 0
-
-camControl = ct.controller()
 
 running = True
 speed = 8
+select = False
+selected_solution = 0
+optimise_selected = False
+
+horr = 0
+vert = 0
+space = False
+
+screen.fill((0, 0, 0))
+graph_data = np.array(op.extract_objectives(optimiser.solution_history))
+graph.highlight_population = optimiser.population
+graph.update(graph_data, optimiser.pareto_front)
+graph.draw_surface()
+
+for s, mapsOfSolution in enumerate(mapsOfPopulation):
+    for r, routeMap in enumerate(mapsOfSolution):
+        routeMap.update(optimiser.solution_history[optimiser.population[s]].solution[r])
+
+instruction_font = pg.font.SysFont("Consolas", 20)
+instruction1 = instruction_font.render("Press space to create the next generation", True, (255, 0 ,0))
+instruction2 = instruction_font.render("Use the arrow keys to scroll around the screen", True, (255, 0, 0))
+instruction2_5 = instruction_font.render("Press enter to run pareto distance optimisation", True, (255, 0, 0))
+instruction3 = instruction_font.render("Press S to enter selection mode", True, (255, 0, 0))
+instruction4 = instruction_font.render("Use arrow keys to choose a solution on the pareto front", True, (255, 0, 0))
+instruction4_5 = instruction_font.render("Press enter to optimise the distance of selected solution", True, (255, 0, 0))
+instruction5 = instruction_font.render("Press S to exit selection mode", True, (255,0 , 0))
+instruction6 = instruction_font.render("Generation: 0", True, (255,0,0))
+
+gen = 0
+
 dt = 0
 while running:
+    space = False
+    select_arrows = 0
+    optimise_selected = False
     for event in pg.event.get():
         if event.type == pg.QUIT:
             running = False
+
+        elif event.type == pg.VIDEORESIZE:
+            width = screen.get_width()
+            height = screen.get_height()
+            camera.surface = pg.Surface((width, height))
+
         elif event.type == pg.KEYDOWN:
-            if event.key == pg.K_LSHIFT:
-                speed = 20
-            elif event.key == pg.K_e:
-                camControl.translation[1] = 1
-            elif event.key == pg.K_q:
-                camControl.translation[1] = -1
-            elif event.key == pg.K_a:
-                camControl.translation[2] = 1
-            elif event.key == pg.K_d:
-                camControl.translation[2] = -1
-            elif event.key == pg.K_w:
-                camControl.translation[0] = -1
-            elif event.key == pg.K_s: 
-                camControl.translation[0] = 1
-            elif event.key == pg.K_UP:
-                camControl.rotation[0] = 1
+            if event.key == pg.K_UP:
+                vert = 1
             elif event.key == pg.K_DOWN:
-                camControl.rotation[0] = -1
+                vert = -1
             elif event.key == pg.K_LEFT:
-                camControl.rotation[2] = -1
+                horr = 1
             elif event.key == pg.K_RIGHT:
-                camControl.rotation[2] = 1
-            elif event.key == pg.K_1:
-                run_optimiser_A = not run_optimiser_A
-            elif event.key == pg.K_2:
-                run_optimiser_B = not run_optimiser_B
-            elif event.key == pg.K_3:
-                run_optimiser_C = not run_optimiser_C
-            elif event.key == pg.K_4:
-                run_optimiser_D = not run_optimiser_D
+                horr = -1
+
         elif event.type == pg.KEYUP:
-            if event.key == pg.K_LSHIFT:
-                speed = 8
-            elif event.key == pg.K_e:
-                camControl.translation[1] = 0
-            elif event.key == pg.K_q:
-                camControl.translation[1] = 0
-            elif event.key == pg.K_a:
-                camControl.translation[2] = 0
-            elif event.key == pg.K_d:
-                camControl.translation[2] = 0
-            elif event.key == pg.K_w:
-                camControl.translation[0] = 0
-            elif event.key == pg.K_s: 
-                camControl.translation[0] = 0
-            elif event.key == pg.K_UP:
-                camControl.rotation[0] = 0
+            if event.key == pg.K_UP:
+                vert = 0
             elif event.key == pg.K_DOWN:
-                camControl.rotation[0] = 0
+                vert = 0
             elif event.key == pg.K_LEFT:
-                camControl.rotation[2] = 0
+                horr = 0
+                select_arrows = -1
             elif event.key == pg.K_RIGHT:
-                camControl.rotation[2] = 0
-    
-    if timer < 60:
-        optimiser_A.HillClimbSwapperWithExplorationOptimise()
-        current_route_A.update_route(optimiser_A.route)
+                horr = 0
+                select_arrows = 1
+            elif event.key == pg.K_SPACE:
+                space = True
+            elif event.key == pg.K_s:
+                select = not select
 
-        graph_data_A[0] = optimiser_A.customer_satisfaction_history
-        graph_data_A[1] = optimiser_A.distance_history
-        graph_A.update_ui(np.array(graph_data_A), "customer satisfaction", "distance", pareto_front=optimiser_A.pareto_front)
-    
-    elif timer < 120:
-        optimiser_B.HillClimbSwapperOptimise()
-        current_route_B.update_route(optimiser_B.route)
+            elif event.key == pg.K_RETURN:
+                optimise_selected = True
 
-        graph_data_B[0] = optimiser_B.customer_satisfaction_history
-        graph_data_B[1] = optimiser_B.distance_history
-        graph_B.update_ui(np.array(graph_data_B), "customer satisfaction", "distance", pareto_front=optimiser_B.pareto_front)
+
+
+    arrow_vector = speed * np.array([horr, vert], dtype=np.float64) / np.linalg.norm(np.array([horr, vert])) if np.linalg.norm(np.array([horr, vert])) != 0 else np.array([0, 0])
+    if not select:
+        camera.position -= arrow_vector
+
+    if arrow_vector[0] == 0 and arrow_vector[1] == 0 and (space or starting_gens > 0) and not select:
+        screen.blit(loading_text, (width - loading_text.get_width(), 120))
+        gen +=1
+        instruction6 = instruction_font.render(f"Generation: {gen}", True, (255,0,0))
+        pg.display.flip()
+        screen.fill((0, 0, 0))
+        optimiser.genetic_optimiser()
+        graph_data = np.array(op.extract_objectives(optimiser.solution_history))
+        graph.highlight_population = optimiser.population
+        graph.update(graph_data, optimiser.pareto_front)
+        graph.draw_surface()
+
+        for s, mapsOfSolution in enumerate(mapsOfPopulation):
+            for r, routeMap in enumerate(mapsOfSolution):
+                routeMap.colour = np.array((255, 0, 0))
+                routeMap.update(optimiser.solution_history[optimiser.population[s]].solution[r])
+
+        if starting_gens > 0:
+            starting_gens += -1
+
+    if select and len(graph.pareto_front) > 0:
+
+        if optimise_selected:
+            gen+=1
+            instruction6 = instruction_font.render(f"Generation: {gen}", True, (255,0,0))
+            optimiser.optimise_distance_of_selected_solution(graph.sorted_pareto_front[selected_solution])
+
+            graph_data = np.array(op.extract_objectives(optimiser.solution_history))
+            graph.update(graph_data, optimiser.pareto_front)
+
+        if select_arrows != 0:
+            selected_solution += select_arrows
+        if selected_solution < 0:
+            selected_solution = len(graph.pareto_front)-1
+        if selected_solution >= len(graph.pareto_front):
+            selected_solution = 0
+
+
         
-    elif timer < 180:    
-        optimiser_C.MutateOnlyParetoFrontOptimise()
-        current_route_C.update_route(optimiser_C.route)
+        graph.draw_surface()
+        graph.select_solution(selected_solution)
 
-        graph_data_C[0] = optimiser_C.customer_satisfaction_history
-        graph_data_C[1] = optimiser_C.distance_history
-        graph_C.update_ui(np.array(graph_data_C), "customer satisfaction", "distance", pareto_front=optimiser_C.pareto_front)#
-    
-    elif timer < 240:    
-        optimiser_D.MutateParetoAndExploreOptimise()
-        current_route_D.update_route(optimiser_D.route)
+        for r, routeMap in enumerate(mapsOfPopulation[0]):
+            routeMap.colour = np.array((0, 0, 255))
+            routeMap.update(optimiser.solution_history[graph.sorted_pareto_front[selected_solution]].solution[r])
 
-        graph_data_D[0] = optimiser_D.customer_satisfaction_history
-        graph_data_D[1] = optimiser_D.distance_history
-        graph_D.update_ui(np.array(graph_data_D), "customer satisfaction", "distance", pareto_front=optimiser_D.pareto_front)
+    else:
+        if optimise_selected:
+            screen.blit(loading_text, (width - loading_text.get_width(), 120))
+            pg.display.flip()
+            for i in optimiser.pareto_front:
+                optimiser.optimise_distance_of_selected_solution(i)
+            
+            optimiser.pareto_front = op.findParetoFront(optimiser.solution_history)
+            optimiser.population = optimiser.pareto_front.copy()
+            graph_data = np.array(op.extract_objectives(optimiser.solution_history))
+            graph.update(graph_data, optimiser.pareto_front)
+        graph.draw_surface()                
 
-    camControl.transform(shader.camera, speed, 0.7, dt)
-    screen.blit(shader.rasterize(), (0, 0))
+    camera.render()
+    screen.blit(camera.surface, (0,0))
 
-    screen.blit(graph_A.surface, (0,0))
-    screen.blit(graph_B.surface, (0,graph_A.size[1]+5))
-    screen.blit(graph_C.surface, (0,graph_A.size[1]+graph_B.size[1]+10))
-    screen.blit(graph_D.surface, (0,graph_A.size[1]+graph_B.size[1]+graph_C.size[1]+15))
+    if not select:
+        screen.blit(instruction1, (width-instruction1.get_width(), 0))
+        screen.blit(instruction2, (width-instruction2.get_width(), 25))
+        screen.blit(instruction2_5, (width-instruction2_5.get_width(), 50))
+        screen.blit(instruction3, (width-instruction3.get_width(), 75))
+        screen.blit(instruction6, (width-instruction6.get_width(), 100))
+    else:
+        screen.blit(instruction4, (width-instruction4.get_width(), 0))
+        screen.blit(instruction4_5, (width-instruction4_5.get_width(), 25))
+        screen.blit(instruction5, (width-instruction5.get_width(), 50))
 
     pg.display.flip()
     dt = clock.tick(30) / 1000
-    timer += dt
 
 
 sys.exit()
