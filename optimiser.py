@@ -1,6 +1,5 @@
+from random import shuffle
 import numpy as np
-
-rng = np.random.default_rng()
 
 def findParetoFront(solution_history):
     distances, demands = extract_objectives(solution_history)
@@ -172,7 +171,32 @@ class MOGA_PTSP:
             new_population.append(len(self.solution_history)-1)
         return new_population 
 
+    def crossover_routes(self, crossover_rate):
+
+        shuffleSolutions = self.population.copy()
+        np.random.shuffle(shuffleSolutions)
+        number_of_parents = int(len(shuffleSolutions)/2)
+        
+        dominant_parents = shuffleSolutions[0:number_of_parents]
+        recessive_parents = shuffleSolutions[-number_of_parents:]
+
+        for dom_sol, rec_sol in zip(dominant_parents, recessive_parents):
+            new_solution = []
+            for dom_route, rec_route in zip(self.solution_history[dom_sol].solution, self.solution_history[rec_sol].solution):
+                # crossover should be set to > 0.5 in order for dominant to be actually dominant
+                # if it is less it shouldn't matter too much but variable labels would be the wrong way around
+                if np.random.random() < crossover_rate:
+                    new_solution.append(dom_route)
+                else:
+                    new_solution.append(rec_route)
+            self.solution_history.append(Solution(new_solution, self.all_distances, self.starting_demands))
+            self.population.append(len(self.solution_history)-1)
+
+
+        #for solution in self.population:
+
     def genetic_optimiser(self):
+        self.crossover_routes(2)
         self.generations+=1
 
         new_populations = []
@@ -193,6 +217,13 @@ class MOGA_PTSP:
 
         # eliminate the worst solutions:
         self.population = findBestSolutions(self.population, self.population_size, self.solution_history)
+        
+        # apply crossover after elimination to ensure that best 'genes' are selected
+        self.crossover_routes(0.1)
+
+        # eliminate again:
+        self.population = findBestSolutions(self.population, self.population_size, self.solution_history)
+
         # calculate pareto front from the entire history
         self.pareto_front = findParetoFront(self.solution_history)
 
@@ -253,8 +284,7 @@ class MOGA_PTSP:
         to_append = np.random.choice(range(effective_cutoff), num_sols, replace=False, p=weighting)
         for i in to_append:
             self.population.append(i+offset) # use this to ensure that index is consistent with solution history
-
-        
+      
     def dist_of_route(self, route):
         summation = 0
         for i in range(len(route)):
@@ -294,8 +324,7 @@ class Solution:
         self.first_solution = solution.copy()
         self.demands = demands.copy()
         self.distance, self.demand = self.evaluate_objectives(distance_array)
-
-        
+       
     def evaluate_objectives(self, all_distances):
         demands = self.initial_demands.copy()
         total_distance = 0
