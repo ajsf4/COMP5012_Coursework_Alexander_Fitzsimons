@@ -1,25 +1,27 @@
 import numpy as np
+# installed module imports
 import pygame as pg
 import sys
-
+# custom module imports
 import optimiser as op
 import Render2D as r
 
-
+# gets user input for number of generations to automatically run
 try:
     starting_gens = int(input("Enter the number of generations to start with (e.g: 10):"))
 except:
     print("invalid input. Starting with a single generation")
     starting_gens = 1
 
+# pygame general initialisations
 pg.init()
 clock = pg.time.Clock()
-
-# Screen
 width, height = 1200, 700
 screen = pg.display.set_mode((width, height), pg.RESIZABLE)
 pg.display.set_caption("Travelling Salesman Problem")
+pg.display.set_icon(pg.image.load("icon.png"))
 
+# loading data
 points = []
 demands = []
 initial_connections = []
@@ -32,15 +34,16 @@ with open("data//vrp8.txt", "r") as f:
         initial_connections.append(int(n)-2)
 points = np.array(points)
 
+# initialises the optimiser
 optimiser = op.MOGA_PTSP(points, demands, 30)
+# initialises the objective space graph
 graph = r.GraphObj(np.array([0,0]), np.array(op.extract_objectives(optimiser.solution_history)), np.array([500,500]), "MOGA", "total distance", "remaining demand")
 
+# initialises the camera for viewing the scene
 camera = r.Camera2D((width, height))
 camera.add_to_scene(graph)
 
-loading_font = pg.font.SysFont("Consolas", 40)
-loading_text = loading_font.render("Loading next generation...", True, (255, 0, 0))
-
+# initialises the display maps
 mapsOfPopulation = []
 for y, solution_index in enumerate(optimiser.population):
     mapsOfSolution = []
@@ -50,27 +53,24 @@ for y, solution_index in enumerate(optimiser.population):
     mapsOfPopulation.append(mapsOfSolution.copy())
 
 
-running = True
-speed = 8
-select = False
-selected_solution = 0
-optimise_selected = False
-
-horr = 0
-vert = 0
-space = False
-
-screen.fill((0, 0, 0))
+# adds data to the graph
 graph_data = np.array(op.extract_objectives(optimiser.solution_history))
 graph.highlight_population = optimiser.population
 graph.update(graph_data, optimiser.pareto_front)
 graph.draw_surface()
 
+# adding solutions to the display maps
 for s, mapsOfSolution in enumerate(mapsOfPopulation):
     for r, routeMap in enumerate(mapsOfSolution):
         routeMap.update(optimiser.solution_history[optimiser.population[s]].solution[r])
 
+
+# initialises fonts
+loading_font = pg.font.SysFont("Consolas", 40)
 instruction_font = pg.font.SysFont("Consolas", 20)
+
+# test surface definitions
+loading_text = loading_font.render("Loading next generation...", True, (255, 0, 0))
 instruction1 = instruction_font.render("Press space to create the next generation", True, (255, 0 ,0))
 instruction2 = instruction_font.render("Use the arrow keys to scroll around the screen", True, (255, 0, 0))
 instruction2_5 = instruction_font.render("Press enter to run pareto distance optimisation", True, (255, 0, 0))
@@ -80,13 +80,29 @@ instruction4_5 = instruction_font.render("Press enter to optimise the distance o
 instruction5 = instruction_font.render("Press S to exit selection mode", True, (255,0 , 0))
 instruction6 = instruction_font.render("Generation: 0", True, (255,0,0))
 
+#keeps count of the number of MOGA generations
 gen = 0
-
+# delta time
 dt = 0
+
+# keeps track of user inputs
+horr = 0
+vert = 0
+space = False
+speed = 15
+select = False
+selected_solution = 0
+optimise_selected = False
+running = True
+
+#main program loop
 while running:
+    #variable resets
     space = False
     select_arrows = 0
     optimise_selected = False
+
+    #event handling loop
     for event in pg.event.get():
         if event.type == pg.QUIT:
             running = False
@@ -124,20 +140,20 @@ while running:
 
             elif event.key == pg.K_RETURN:
                 optimise_selected = True
-
-
-
+    
+    #view control
     arrow_vector = speed * np.array([horr, vert], dtype=np.float64) / np.linalg.norm(np.array([horr, vert])) if np.linalg.norm(np.array([horr, vert])) != 0 else np.array([0, 0])
     if not select:
         camera.position -= arrow_vector
 
+    # runs a generation if the following condition
     if arrow_vector[0] == 0 and arrow_vector[1] == 0 and (space or starting_gens > 0) and not select:
         screen.blit(loading_text, (width - loading_text.get_width(), 120))
         gen +=1
         instruction6 = instruction_font.render(f"Generation: {gen}", True, (255,0,0))
         pg.display.flip()
         screen.fill((0, 0, 0))
-        optimiser.genetic_optimiser()
+        optimiser.optimise()
         graph_data = np.array(op.extract_objectives(optimiser.solution_history))
         graph.highlight_population = optimiser.population
         graph.update(graph_data, optimiser.pareto_front)
@@ -154,8 +170,6 @@ while running:
     if select and len(graph.pareto_front) > 0:
 
         if optimise_selected:
-            gen+=1
-            instruction6 = instruction_font.render(f"Generation: {gen}", True, (255,0,0))
             optimiser.optimise_distance_of_selected_solution(graph.sorted_pareto_front[selected_solution])
 
             graph_data = np.array(op.extract_objectives(optimiser.solution_history))
@@ -167,8 +181,6 @@ while running:
             selected_solution = len(graph.pareto_front)-1
         if selected_solution >= len(graph.pareto_front):
             selected_solution = 0
-
-
         
         graph.draw_surface()
         graph.select_solution(selected_solution)
@@ -185,9 +197,14 @@ while running:
                 optimiser.optimise_distance_of_selected_solution(i)
             
             optimiser.pareto_front = op.findParetoFront(optimiser.solution_history)
-            optimiser.population = optimiser.pareto_front.copy()
+            optimiser.population = op.findBestSolutions(optimiser.pareto_front, optimiser.population_size, optimiser.solution_history)
+            optimiser.clusterer(0.02)
+            if len(optimiser.population) < optimiser.population_size:
+                number_of_solutions = optimiser.population_size - len(optimiser.population)
+                optimiser.select_diverse_solutions_from_history(number_of_solutions)
             graph_data = np.array(op.extract_objectives(optimiser.solution_history))
             graph.update(graph_data, optimiser.pareto_front)
+            graph.highlight_population = optimiser.population
         graph.draw_surface()                
 
     camera.render()

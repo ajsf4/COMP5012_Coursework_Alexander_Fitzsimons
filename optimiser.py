@@ -1,6 +1,10 @@
 from random import shuffle
 import numpy as np
 
+# sets the random seed meaning the same inputs should yield the same results every time
+# comment out or change the seed parameter to see different results
+np.random.seed(1)
+
 def findParetoFront(solution_history):
     distances, demands = extract_objectives(solution_history)
     num = len(distances)
@@ -31,17 +35,17 @@ def normalise(value, min_val, max_val):
     return (value - min_val) / (max_val - min_val)
 
 def findBestSolutions(solution_indexes, number_of_solutions, solution_history):
-    distances, demands = extract_objectives(solution_history)
-    distances = [distances[i] for i in solution_indexes]
-    demands = [demands[i] for i in solution_indexes]
+    history_distances, history_demands = extract_objectives(solution_history)
+    distances = [history_distances[i] for i in solution_indexes]
+    demands = [history_demands[i] for i in solution_indexes]
 
     if len(solution_indexes) < number_of_solutions:
         number_of_solutions = len(solution_indexes)
 
     dominated_by = []
     for i in range(len(solution_indexes)):
-        i_is_better_than_these_di = distances[i] < distances
-        i_is_better_than_these_de = demands[i] < demands
+        i_is_better_than_these_di = distances[i] < history_distances
+        i_is_better_than_these_de = demands[i] < history_demands
 
         #indicates for each solution in the list, how many other solutions dominate it
         dominated_by.append(sum(np.logical_not(np.logical_or(i_is_better_than_these_de, i_is_better_than_these_di))))
@@ -62,6 +66,7 @@ def findBestSolutions(solution_indexes, number_of_solutions, solution_history):
     return let_through
 
 
+# Main Multi objective genetic algorithm class (also contains the single objective distance optimiser)
 class MOGA_PTSP:
     def __init__(self, points, demands, population):
         self.points = points
@@ -72,9 +77,9 @@ class MOGA_PTSP:
 
         # number of periods is equal to the maximum demand as this allows every node to be visited at least that many times within the number of period
         # in this variation a node doesn't have to be visited in every period, but each node has a demand that is reduced by 1 every time it is visited in a period
-        # this continues until the end of the number of periods and the remaining demand is summed up
-        # the sum total demand at the end should be minimized as well as the total distance travelled       
-        self.periods = max(demands)
+        # this continues until the end of the number of periods and the remaining demand is summed up  
+        self.periods = 28
+
         
         # population consists of a series of solutions which will be mutated each generation to try and optimise the objectives
         # each solution has n routes where n is the number of periods
@@ -195,34 +200,30 @@ class MOGA_PTSP:
 
         #for solution in self.population:
 
-    def genetic_optimiser(self):
-        self.crossover_routes(2)
+    def optimise(self):
         self.generations+=1
+
+        self.crossover_routes(0.95)
 
         new_populations = []
         for i in range(1, 10):
-            new_populations.append(self.mutate(5))
-
-        # combine the new with the old
+            new_populations.append(self.mutate(4))
+        # combine the new mutated solutions with the old population
         for population in new_populations:
             for solution_index in population:
                 self.population.append(solution_index)
 
+        # eliminate the worst solutions:
+        self.population = findBestSolutions(self.population, self.population_size, self.solution_history)
+
         # apply clusterer to reduce solutions which are too crowded:
-        self.clusterer(0.1)
+        self.clusterer(0.02)
 
         if len(self.population) < self.population_size:
             number_of_solutions = self.population_size - len(self.population)
             self.select_diverse_solutions_from_history(number_of_solutions)
 
-        # eliminate the worst solutions:
-        self.population = findBestSolutions(self.population, self.population_size, self.solution_history)
-        
-        # apply crossover after elimination to ensure that best 'genes' are selected
-        self.crossover_routes(0.1)
 
-        # eliminate again:
-        self.population = findBestSolutions(self.population, self.population_size, self.solution_history)
 
         # calculate pareto front from the entire history
         self.pareto_front = findParetoFront(self.solution_history)
